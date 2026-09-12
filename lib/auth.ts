@@ -2,7 +2,9 @@ import { betterAuth } from "better-auth/minimal";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
 import { db } from "@/lib/db";
 
-const secret = process.env.BETTER_AUTH_SECRET;
+const buildPhase = process.env.NEXT_PHASE === "phase-production-build";
+const secret = process.env.BETTER_AUTH_SECRET
+  ?? (buildPhase ? "build-only-secret-never-used-at-runtime" : undefined);
 if (!secret || secret.length < 32) {
   throw new Error("BETTER_AUTH_SECRET must be configured with at least 32 characters.");
 }
