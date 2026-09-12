@@ -29,11 +29,16 @@ function cookieHeader(response) {
 async function signInTestIdentity(email, password) {
   const response = await request("/api/auth/sign-in/email", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "origin": base
+    },
     body: JSON.stringify({ email, password })
   });
   if (response.status !== 200) {
-    failures.push(`${email} sign-in returned ${response.status}, expected 200`);
+    const detail = (await response.text()).slice(0, 300);
+    failures.push(`${email} sign-in returned ${response.status}, expected 200: ${detail}`);
     return "";
   }
   const cookie = cookieHeader(response);
