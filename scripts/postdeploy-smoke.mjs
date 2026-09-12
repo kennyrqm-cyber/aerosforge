@@ -83,6 +83,20 @@ try {
   const signup = await request("/sign-up");
   if (signup.status !== 200) failures.push(`/sign-up returned ${signup.status}, expected 200`);
 
+  const recovery = await request("/forgot-password");
+  const recoveryHtml = await recovery.text();
+  if (recovery.status !== 200) failures.push(`/forgot-password returned ${recovery.status}, expected 200`);
+  if (process.env.EXPECT_EMAIL_DELIVERY_DISABLED === "true" && !recoveryHtml.includes("Account recovery is not open yet")) {
+    failures.push(`/forgot-password did not fail closed while account email delivery was disabled`);
+  }
+
+  const reset = await request("/reset-password");
+  const resetHtml = await reset.text();
+  if (reset.status !== 200) failures.push(`/reset-password returned ${reset.status}, expected 200`);
+  if (process.env.EXPECT_EMAIL_DELIVERY_DISABLED === "true" && !resetHtml.includes("Account recovery is not open yet")) {
+    failures.push(`/reset-password did not fail closed while account email delivery was disabled`);
+  }
+
   const health = await request("/api/health");
   if (health.status !== 200) {
     failures.push(`/api/health returned ${health.status}, expected 200`);

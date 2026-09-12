@@ -56,3 +56,21 @@ Leads must be real.
 Customers must exist.
 Claims must be supportable.
 Analytics must come from source systems.
+
+## Current release-candidate verdict
+
+**BLACK FLAG — public production launch remains blocked.**
+
+The preview foundation now enforces server-owned roles, independent CFI review, Admin publication, database persistence, and fail-closed launch flags. That is necessary, but it is not sufficient.
+
+Do not enable public signup or sell access until each item below has named evidence and an accountable owner:
+
+- verified-domain account email tested end to end;
+- identity-proofed CFI onboarding and revocation;
+- approved aviation content published through the enforced workflow;
+- legal, privacy, retention, and incident-response review;
+- successful backup restoration drill with documented RPO/RTO;
+- production monitoring, alerting, and response ownership;
+- accessibility and supported-client acceptance testing.
+
+No evidence means no launch. Founder confidence is not evidence.

@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth/minimal";
 import { prismaAdapter } from "@better-auth/prisma-adapter";
+import { isAccountEmailDeliveryConfigured, sendAccountEmail } from "@/lib/account-email";
 import { db } from "@/lib/db";
 
 const buildPhase = process.env.NEXT_PHASE === "phase-production-build";
@@ -24,6 +25,10 @@ if (allowedHosts.length === 0) {
   throw new Error("BETTER_AUTH_ALLOWED_HOSTS must contain at least one trusted host.");
 }
 
+if (process.env.PUBLIC_SIGNUP_ENABLED === "true" && !isAccountEmailDeliveryConfigured()) {
+  throw new Error("Public signup cannot open until verified account email delivery is configured.");
+}
+
 export const auth = betterAuth({
   database: prismaAdapter(db, { provider: "postgresql" }),
   secret,
@@ -31,10 +36,27 @@ export const auth = betterAuth({
     allowedHosts,
     protocol: process.env.NODE_ENV === "development" ? "http" : "auto"
   },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    autoSignInAfterVerification: false,
+    expiresIn: 60 * 60,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendAccountEmail({ kind: "verify-email", to: user.email, url });
+    }
+  },
   emailAndPassword: {
     enabled: true,
     disableSignUp: process.env.PUBLIC_SIGNUP_ENABLED !== "true",
-    requireEmailVerification: false,
+    requireEmailVerification: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendAccountEmail({ kind: "reset-password", to: user.email, url });
+    },
+    resetPasswordTokenExpiresIn: 30 * 60,
+    revokeSessionsOnPasswordReset: true,
+    onPasswordReset: async ({ user }) => {
+      await db.auditEvent.create({ data: { actorId: user.id, action: "PASSWORD_RESET_COMPLETED", entityType: "User", entityId: user.id } });
+    },
     minPasswordLength: 10,
     maxPasswordLength: 128
   },
@@ -46,7 +68,10 @@ export const auth = betterAuth({
     max: 100,
     customRules: {
       "/sign-in/email": { window: 60, max: 5 },
-      "/sign-up/email": { window: 60, max: 5 }
+      "/sign-up/email": { window: 60, max: 5 },
+      "/request-password-reset": { window: 60, max: 3 },
+      "/reset-password": { window: 60, max: 5 },
+      "/send-verification-email": { window: 60, max: 3 }
     }
   },
   user: {

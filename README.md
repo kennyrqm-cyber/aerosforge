@@ -1,23 +1,59 @@
-# AEROSFORGE™ — Global Vertical Flight Network
+# AEROSFORGE ONE™
 
-Public static MVP for the AEROSFORGE aviation education platform.
+Release-candidate foundation for an aviation education and operations platform.
 
-## Includes
-- AEROSFORGE Academy with 30-lesson curriculum
-- Pilot Passport XP and progression
-- The Gauntlet scenario engine
-- Rotor Coach and oral-exam demo interfaces
-- Official FAA resource center
-- CFI/admin architecture concept
-- Winchester, Virginia 2027 flight-academy funnel
+## Implemented in this candidate
 
-## Status
-This is a front-end prototype, not a production aviation training system. It does not issue FAA certificates or WINGS credit, provide flight instruction, or securely store real credentials.
+- Next.js application with Better Auth and Neon Postgres
+- Server-owned Student, CFI, and Admin roles with route-level authorization
+- CI-only synthetic identities that cannot be seeded outside GitHub Actions
+- Academy lessons and Gauntlet scenarios restricted to published content
+- Independent CFI approval followed by separate Admin publication
+- Version-bound review records and audit events
+- Controlled public-signup, Winchester-lead, search-indexing, and account-email flags
+- Email verification and password recovery integration prepared for Resend
+- Password-reset session revocation and database-backed auth rate limiting
+- Health, role-boundary, content-workflow, recovery-gate, schema, and security checks
+- Preserved legacy site and documented rollback path
 
-Production roadmap: secure authentication, database, instructor verification, audited content, AI safety controls, analytics, payments, privacy/security, video delivery, accessibility, and aviation/legal compliance review.
+## Controlled-launch configuration
+
+All public capabilities remain closed unless their exact flags and dependencies are configured. See `.env.example`.
+
+- `PUBLIC_SIGNUP_ENABLED` requires verified account email delivery.
+- `AUTH_EMAIL_DELIVERY_ENABLED` requires both `RESEND_API_KEY` and `AUTH_EMAIL_FROM`.
+- `WINCHESTER_LEADS_ENABLED` controls lead submission.
+- `PUBLIC_INDEXING_ENABLED` controls search-engine indexing.
+- CI test identities require GitHub Actions plus an explicit E2E flag and password.
+
+## Non-negotiable safety boundary
+
+AEROSFORGE does not issue FAA certificates or WINGS credit and does not replace a CFI, an official briefing, approved aircraft data, current regulations, or pilot-in-command judgment. Aviation training content must remain draft until independently reviewed and published through the enforced workflow.
+
+## Remaining production blockers
+
+- Verify the sending domain and exercise real email verification and password recovery end to end.
+- Establish identity-proofed CFI onboarding and role-elevation procedures.
+- Complete aviation/legal review, privacy terms, incident response, and data-retention rules.
+- Prove Neon backup restoration and document recovery objectives.
+- Add production monitoring, alerting, and an on-call owner.
+- Complete accessibility and supported-device/browser acceptance testing.
+- Approve production content through the independent CFI/Admin workflow.
+
+Until those gates are evidenced, this branch is a release candidate—not a public production launch.
+
+## Verification
+
+```bash
+npm ci
+npm run preflight
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Database-backed integration and post-deploy smoke tests run in GitHub Actions.
 
 ## Brand
-AEROSFORGE is the working brand for this build. Use ™ while clearance/registration is pending; do not use ® unless registration is actually granted.
 
-## Mission
-LEARN • FLY • EARN • ADVANCE • TRANSFORM
+AEROSFORGE is the working brand. Use ™ while clearance or registration is pending; never use ® unless registration is granted.

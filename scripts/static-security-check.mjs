@@ -34,7 +34,13 @@ const checks = [
   ["prisma/schema.prisma", /contactConsent\s+Boolean\s+@default\(false\)/, "lead consent must fail closed by default"],
   ["prisma/schema.prisma", /model RateLimit \{/, "database-backed auth rate limit model must exist"],
   ["prisma/seed.ts", /GITHUB_ACTIONS !== "true"/, "synthetic identities must be restricted to GitHub Actions"],
-  ["prisma/seed.ts", /E2E_TEST_PASSWORD/, "synthetic identity passwords must come from the environment"]
+  ["prisma/seed.ts", /E2E_TEST_PASSWORD/, "synthetic identity passwords must come from the environment"],
+  ["lib/auth.ts", /requireEmailVerification:\s*true/, "email/password sessions must require verified email"],
+  ["lib/auth.ts", /revokeSessionsOnPasswordReset:\s*true/, "password reset must revoke existing sessions"],
+  ["lib/auth.ts", /"\/request-password-reset": \{ window: 60, max: 3 \}/, "password reset requests must be tightly rate limited"],
+  ["lib/auth.ts", /"\/send-verification-email": \{ window: 60, max: 3 \}/, "verification email requests must be tightly rate limited"],
+  ["lib/auth.ts", /PUBLIC_SIGNUP_ENABLED === "true" && !isAccountEmailDeliveryConfigured\(\)/, "signup must require configured account email delivery"],
+  ["lib/account-email.ts", /AUTH_EMAIL_DELIVERY_ENABLED === "true"/, "account email delivery must fail closed"]
 ];
 
 const failures = [];

@@ -72,4 +72,5 @@ jobs:
       - name: Production smoke test
         env:
           APP_URL: http://127.0.0.1:3000
+          EXPECT_EMAIL_DELIVERY_DISABLED: "true"
         run: npm run smoke:postdeploy
