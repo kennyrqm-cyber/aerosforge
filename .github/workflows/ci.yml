@@ -10,6 +10,8 @@ env:
   DIRECT_DATABASE_URL: postgresql://ci_user:ci_password@127.0.0.1:5432/aerosforge_ci
   BETTER_AUTH_SECRET: ci-only-secret-32-characters-minimum-000000000000
   BETTER_AUTH_ALLOWED_HOSTS: 127.0.0.1:3000,localhost:3000
+  E2E_TEST_IDENTITIES_ENABLED: "true"
+  E2E_TEST_PASSWORD: ci-only-role-flow-password-000000
 jobs:
   verify:
     runs-on: ubuntu-latest

@@ -1,10 +1,59 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient, ContentStatus } from "../generated/prisma/client";
+import { hashPassword } from "better-auth/crypto";
+import { PrismaClient, AssignmentStatus, ContentStatus, Role } from "../generated/prisma/client";
 import { normalizeDatabaseUrl } from "../lib/database-url";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required");
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: normalizeDatabaseUrl(connectionString) }) });
+
+const testIdentities = [
+  { email: "student.e2e@aerosforge.test", name: "AEROSFORGE Test Student", role: Role.STUDENT },
+  { email: "cfi.e2e@aerosforge.test", name: "AEROSFORGE Test CFI", role: Role.CFI },
+  { email: "admin.e2e@aerosforge.test", name: "AEROSFORGE Test Admin", role: Role.ADMIN }
+] as const;
+
+async function seedCiTestIdentities() {
+  if (process.env.E2E_TEST_IDENTITIES_ENABLED !== "true") return;
+  if (process.env.GITHUB_ACTIONS !== "true") {
+    throw new Error("E2E test identities may only be seeded inside GitHub Actions.");
+  }
+  const password = process.env.E2E_TEST_PASSWORD;
+  if (!password || password.length < 20) {
+    throw new Error("E2E_TEST_PASSWORD must contain at least 20 characters.");
+  }
+
+  const users = new Map<Role, { id: string }>();
+  for (const identity of testIdentities) {
+    const user = await db.user.upsert({
+      where: { email: identity.email },
+      update: { name: identity.name, role: identity.role, emailVerified: true },
+      create: { email: identity.email, name: identity.name, role: identity.role, emailVerified: true }
+    });
+    users.set(identity.role, user);
+    const passwordHash = await hashPassword(password);
+    await db.account.upsert({
+      where: { providerId_accountId: { providerId: "credential", accountId: user.id } },
+      update: { password: passwordHash, userId: user.id },
+      create: {
+        id: `e2e-credential-${identity.role.toLowerCase()}`,
+        accountId: user.id,
+        providerId: "credential",
+        userId: user.id,
+        password: passwordHash
+      }
+    });
+  }
+
+  const cfi = users.get(Role.CFI);
+  const student = users.get(Role.STUDENT);
+  if (!cfi || !student) throw new Error("E2E role identities were not created.");
+  await db.cfiStudentAssignment.upsert({
+    where: { cfiId_studentId: { cfiId: cfi.id, studentId: student.id } },
+    update: { status: AssignmentStatus.ACTIVE, startedAt: new Date(), endedAt: null },
+    create: { cfiId: cfi.id, studentId: student.id, status: AssignmentStatus.ACTIVE, startedAt: new Date() }
+  });
+}
 
 const lessons = [
   ["helicopter-fundamentals", "Helicopter Fundamentals", "What makes a helicopter fly?", "Aerodynamics"],
@@ -87,6 +136,8 @@ async function main() {
       status: ContentStatus.DRAFT
     }
   });
+
+  await seedCiTestIdentities();
 }
 
 main().then(() => db.$disconnect()).catch(async (error) => { console.error(error); await db.$disconnect(); process.exit(1); });

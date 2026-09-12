@@ -32,7 +32,9 @@ const checks = [
   ["prisma/schema.prisma", /status\s+ContentStatus\s+@default\(DRAFT\)/, "content must default to DRAFT"],
   ["prisma/schema.prisma", /@@unique\(\[providerId, accountId\]\)/, "Better Auth provider/account uniqueness must exist"],
   ["prisma/schema.prisma", /contactConsent\s+Boolean\s+@default\(false\)/, "lead consent must fail closed by default"],
-  ["prisma/schema.prisma", /model RateLimit \{/, "database-backed auth rate limit model must exist"]
+  ["prisma/schema.prisma", /model RateLimit \{/, "database-backed auth rate limit model must exist"],
+  ["prisma/seed.ts", /GITHUB_ACTIONS !== "true"/, "synthetic identities must be restricted to GitHub Actions"],
+  ["prisma/seed.ts", /E2E_TEST_PASSWORD/, "synthetic identity passwords must come from the environment"]
 ];
 
 const failures = [];

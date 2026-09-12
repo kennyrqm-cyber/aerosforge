@@ -19,6 +19,49 @@ function expectRedirectToSignIn(response, path) {
   if (!location.includes("/sign-in")) failures.push(`${path} redirected to ${location || "<missing>"}, expected /sign-in`);
 }
 
+function cookieHeader(response) {
+  const values = typeof response.headers.getSetCookie === "function"
+    ? response.headers.getSetCookie()
+    : [response.headers.get("set-cookie") || ""];
+  return values.filter(Boolean).map((value) => value.split(";", 1)[0]).join("; ");
+}
+
+async function signInTestIdentity(email, password) {
+  const response = await request("/api/auth/sign-in/email", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  if (response.status !== 200) {
+    failures.push(`${email} sign-in returned ${response.status}, expected 200`);
+    return "";
+  }
+  const cookie = cookieHeader(response);
+  if (!cookie) failures.push(`${email} sign-in did not return a session cookie`);
+  return cookie;
+}
+
+async function expectRoleFlow({ email, password, dashboardPath, marker, forbiddenPath }) {
+  const cookie = await signInTestIdentity(email, password);
+  if (!cookie) return;
+  const headers = { cookie };
+  const router = await request("/dashboard", { headers });
+  if (![302, 303, 307, 308].includes(router.status)) {
+    failures.push(`${email} dashboard router returned ${router.status}, expected redirect`);
+  } else if (!String(router.headers.get("location") || "").includes(dashboardPath)) {
+    failures.push(`${email} dashboard router did not select ${dashboardPath}`);
+  }
+  const dashboard = await request(dashboardPath, { headers });
+  const html = await dashboard.text();
+  if (dashboard.status !== 200 || !html.includes(marker)) {
+    failures.push(`${email} could not render its role-owned dashboard`);
+  }
+  const forbidden = await request(forbiddenPath, { headers });
+  if (![302, 303, 307, 308].includes(forbidden.status)) {
+    failures.push(`${email} accessed forbidden route ${forbiddenPath} with status ${forbidden.status}`);
+  }
+}
+
 try {
   const home = await request("/");
   if (home.status !== 200) failures.push(`/ returned ${home.status}, expected 200`);
@@ -50,6 +93,31 @@ try {
 
   const session = await request("/api/auth/get-session");
   if (session.status !== 200) failures.push(`/api/auth/get-session returned ${session.status}, expected 200`);
+
+  if (process.env.E2E_TEST_IDENTITIES_ENABLED === "true") {
+    const password = process.env.E2E_TEST_PASSWORD || "";
+    await expectRoleFlow({
+      email: "student.e2e@aerosforge.test",
+      password,
+      dashboardPath: "/dashboard/student",
+      marker: "Student dashboard",
+      forbiddenPath: "/dashboard/admin"
+    });
+    await expectRoleFlow({
+      email: "cfi.e2e@aerosforge.test",
+      password,
+      dashboardPath: "/dashboard/cfi",
+      marker: "CFI dashboard",
+      forbiddenPath: "/dashboard/admin"
+    });
+    await expectRoleFlow({
+      email: "admin.e2e@aerosforge.test",
+      password,
+      dashboardPath: "/dashboard/admin",
+      marker: "Owner dashboard",
+      forbiddenPath: "/dashboard/student"
+    });
+  }
 } catch (error) {
   failures.push(error instanceof Error ? error.message : String(error));
 }
