@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, Role } from "../generated/prisma/client";
+import { normalizeDatabaseUrl } from "../lib/database-url";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required.");
@@ -13,7 +14,7 @@ const requestedRole = (process.argv[3] || "").trim().toUpperCase();
 if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Usage: npm run role:set -- user@example.com ADMIN|CFI|STUDENT");
 if (!Object.values(Role).includes(requestedRole as Role)) throw new Error("Role must be STUDENT, CFI, or ADMIN.");
 
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: normalizeDatabaseUrl(connectionString) }) });
 try {
   const user = await db.user.findUnique({ where: { email } });
   if (!user) throw new Error(`No user exists for ${email}. The user must sign up first.`);

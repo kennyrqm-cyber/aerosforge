@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { normalizeDatabaseUrl } from "./lib/database-url";
 
 // Client generation does not connect to PostgreSQL, but Prisma still requires a
 // syntactically valid datasource URL while loading this config. Migration and
@@ -12,5 +13,5 @@ const datasourceUrl = process.env.DIRECT_DATABASE_URL
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: { path: "prisma/migrations", seed: "tsx prisma/seed.ts" },
-  datasource: { url: datasourceUrl }
+  datasource: { url: normalizeDatabaseUrl(datasourceUrl) }
 });

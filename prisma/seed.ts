@@ -1,9 +1,10 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, ContentStatus } from "../generated/prisma/client";
+import { normalizeDatabaseUrl } from "../lib/database-url";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required");
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: normalizeDatabaseUrl(connectionString) }) });
 
 const lessons = [
   ["helicopter-fundamentals", "Helicopter Fundamentals", "What makes a helicopter fly?", "Aerodynamics"],
