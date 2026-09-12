@@ -65,6 +65,7 @@ async function expectRoleFlow({ email, password, dashboardPath, marker, forbidde
   if (![302, 303, 307, 308].includes(forbidden.status)) {
     failures.push(`${email} accessed forbidden route ${forbiddenPath} with status ${forbidden.status}`);
   }
+  return cookie;
 }
 
 try {
@@ -101,13 +102,26 @@ try {
 
   if (process.env.E2E_TEST_IDENTITIES_ENABLED === "true") {
     const password = process.env.E2E_TEST_PASSWORD || "";
-    await expectRoleFlow({
+    const studentCookie = await expectRoleFlow({
       email: "student.e2e@aerosforge.test",
       password,
       dashboardPath: "/dashboard/student",
       marker: "Student dashboard",
       forbiddenPath: "/dashboard/admin"
     });
+    if (studentCookie) {
+      const headers = { cookie: studentCookie };
+      const academy = await request("/academy", { headers });
+      const academyHtml = await academy.text();
+      if (academy.status !== 200 || !academyHtml.includes("Helicopter Fundamentals")) {
+        failures.push("Published lesson did not render for the Student role.");
+      }
+      const gauntlet = await request("/gauntlet", { headers });
+      const gauntletHtml = await gauntlet.text();
+      if (gauntlet.status !== 200 || !gauntletHtml.includes("High Density Altitude Decision")) {
+        failures.push("Published scenario did not render for the Student role.");
+      }
+    }
     await expectRoleFlow({
       email: "cfi.e2e@aerosforge.test",
       password,

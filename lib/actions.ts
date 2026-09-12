@@ -3,14 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AssignmentStatus, ContentStatus, LeadStatus, ProgressStatus, ReviewDecision, Role } from "@/generated/prisma/client";
+import {
+  publishLessonWorkflow,
+  publishScenarioWorkflow,
+  reviewLessonWorkflow,
+  reviewScenarioWorkflow
+} from "@/lib/content-workflow";
 import { db } from "@/lib/db";
 import { getAppSession, requireRole } from "@/lib/session";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
-
-const REVIEWABLE_CONTENT_STATUSES = new Set<ContentStatus>([
-  ContentStatus.DRAFT,
-  ContentStatus.IN_REVIEW
-]);
 
 function requiredText(value: FormDataEntryValue | string | null | undefined, field: string, max = 160) {
   const normalized = String(value ?? "").trim();
@@ -221,40 +222,7 @@ export async function reviewLesson(lessonId: string, formData: FormData) {
   if (!["APPROVED", "CHANGES_REQUESTED", "REJECTED"].includes(decisionText)) throw new Error("Invalid review decision.");
   const decision = decisionText as ReviewDecision;
   const notes = optionalText(formData.get("notes"), 2000);
-  if (decision === ReviewDecision.APPROVED && session.user.role !== Role.CFI) throw new Error("Only a CFI can issue the approval required for publication.");
-
-  const lesson = await db.lesson.findUnique({ where: { id: safeLessonId } });
-  if (!lesson || !REVIEWABLE_CONTENT_STATUSES.has(lesson.status)) throw new Error("Only draft or in-review lessons can be reviewed.");
-  if (decision === ReviewDecision.APPROVED) {
-    if (!lesson.contentMd || lesson.contentMd.trim().length < 400) {
-      throw new Error("A lesson needs substantive reviewed content before approval.");
-    }
-    if (!lesson.sourceNotes || lesson.sourceNotes.trim().length < 20) {
-      throw new Error("Source notes are required before approval.");
-    }
-  }
-
-  await db.$transaction(async (tx) => {
-    await tx.contentReview.create({
-      data: { lessonId: safeLessonId, reviewerId: session.user.id, version: lesson.version, decision, notes }
-    });
-    await tx.lesson.update({
-      where: { id: safeLessonId },
-      data: {
-        status: decision === ReviewDecision.APPROVED ? ContentStatus.APPROVED : ContentStatus.IN_REVIEW,
-        reviewedAt: decision === ReviewDecision.APPROVED ? new Date() : lesson.reviewedAt
-      }
-    });
-    await tx.auditEvent.create({
-      data: {
-        actorId: session.user.id,
-        action: "LESSON_REVIEWED",
-        entityType: "Lesson",
-        entityId: safeLessonId,
-        metadata: { decision, version: lesson.version }
-      }
-    });
-  });
+  await reviewLessonWorkflow({ actor: session.user, lessonId: safeLessonId, decision, notes });
   revalidatePath("/dashboard/cfi");
   revalidatePath("/dashboard/admin");
   revalidatePath("/academy");
@@ -267,26 +235,7 @@ export async function reviewScenario(scenarioId: string, formData: FormData) {
   if (!["APPROVED", "CHANGES_REQUESTED", "REJECTED"].includes(decisionText)) throw new Error("Invalid review decision.");
   const decision = decisionText as ReviewDecision;
   const notes = optionalText(formData.get("notes"), 2000);
-  if (decision === ReviewDecision.APPROVED && session.user.role !== Role.CFI) throw new Error("Only a CFI can issue the approval required for publication.");
-  const scenario = await db.gauntletScenario.findUnique({ where: { id: safeScenarioId } });
-  if (!scenario || !REVIEWABLE_CONTENT_STATUSES.has(scenario.status)) throw new Error("Only draft or in-review scenarios can be reviewed.");
-  const choices = Array.isArray(scenario.choices) ? scenario.choices : [];
-  const choiceKeys = choices.flatMap((choice) => choice && typeof choice === "object" && "key" in choice ? [String((choice as { key: unknown }).key)] : []);
-  if (decision === ReviewDecision.APPROVED) {
-    if (scenario.prompt.trim().length < 80 || scenario.explanation.trim().length < 80) throw new Error("Scenario needs substantive prompt and explanation before approval.");
-    if (choiceKeys.length < 3 || !choiceKeys.includes(scenario.correctChoiceKey)) throw new Error("Scenario choices or correct answer are invalid.");
-  }
-
-  await db.$transaction(async (tx) => {
-    await tx.gauntletReview.create({ data: { scenarioId: safeScenarioId, reviewerId: session.user.id, version: scenario.version, decision, notes } });
-    await tx.gauntletScenario.update({
-      where: { id: safeScenarioId },
-      data: { status: decision === ReviewDecision.APPROVED ? ContentStatus.APPROVED : ContentStatus.IN_REVIEW }
-    });
-    await tx.auditEvent.create({
-      data: { actorId: session.user.id, action: "GAUNTLET_REVIEWED", entityType: "GauntletScenario", entityId: safeScenarioId, metadata: { decision, version: scenario.version } }
-    });
-  });
+  await reviewScenarioWorkflow({ actor: session.user, scenarioId: safeScenarioId, decision, notes });
   revalidatePath("/dashboard/cfi");
   revalidatePath("/dashboard/admin");
 }
@@ -294,24 +243,7 @@ export async function reviewScenario(scenarioId: string, formData: FormData) {
 export async function publishScenario(scenarioId: string) {
   const session = await requireRole(Role.ADMIN);
   const safeScenarioId = requiredText(scenarioId, "Scenario", 128);
-  const scenario = await db.gauntletScenario.findUnique({ where: { id: safeScenarioId } });
-  if (!scenario || scenario.status !== ContentStatus.APPROVED) throw new Error("Only approved scenarios can be published.");
-  const independentApproval = await db.gauntletReview.findFirst({
-    where: {
-      scenarioId: safeScenarioId,
-      version: scenario.version,
-      decision: ReviewDecision.APPROVED,
-      reviewerId: { not: session.user.id },
-      reviewer: { role: Role.CFI }
-    },
-    orderBy: { createdAt: "desc" },
-    select: { id: true }
-  });
-  if (!independentApproval) throw new Error("Publication requires approval from a CFI other than the publishing admin.");
-  await db.$transaction(async (tx) => {
-    await tx.gauntletScenario.update({ where: { id: safeScenarioId }, data: { status: ContentStatus.PUBLISHED } });
-    await tx.auditEvent.create({ data: { actorId: session.user.id, action: "GAUNTLET_PUBLISHED", entityType: "GauntletScenario", entityId: safeScenarioId, metadata: { version: scenario.version } } });
-  });
+  await publishScenarioWorkflow({ actor: session.user, scenarioId: safeScenarioId });
   revalidatePath("/dashboard/admin");
   revalidatePath("/gauntlet");
 }
@@ -355,36 +287,7 @@ export async function updateLessonDraft(lessonId: string, formData: FormData) {
 export async function publishLesson(lessonId: string) {
   const session = await requireRole(Role.ADMIN);
   const safeLessonId = requiredText(lessonId, "Lesson", 128);
-  const lesson = await db.lesson.findUnique({ where: { id: safeLessonId } });
-  if (!lesson || lesson.status !== ContentStatus.APPROVED) throw new Error("Only approved lessons can be published.");
-  const independentApproval = await db.contentReview.findFirst({
-    where: {
-      lessonId: safeLessonId,
-      version: lesson.version,
-      decision: ReviewDecision.APPROVED,
-      reviewerId: { not: session.user.id },
-      reviewer: { role: Role.CFI }
-    },
-    orderBy: { createdAt: "desc" },
-    select: { id: true }
-  });
-  if (!independentApproval) throw new Error("Publication requires approval from a CFI other than the publishing admin.");
-
-  await db.$transaction(async (tx) => {
-    await tx.lesson.update({
-      where: { id: safeLessonId },
-      data: { status: ContentStatus.PUBLISHED, publishedAt: new Date() }
-    });
-    await tx.auditEvent.create({
-      data: {
-        actorId: session.user.id,
-        action: "LESSON_PUBLISHED",
-        entityType: "Lesson",
-        entityId: safeLessonId,
-        metadata: { version: lesson.version }
-      }
-    });
-  });
+  await publishLessonWorkflow({ actor: session.user, lessonId: safeLessonId });
   revalidatePath("/dashboard/admin");
   revalidatePath("/academy");
 }
