@@ -14,6 +14,8 @@ function run(bin, args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+run(prismaBin, ["generate"]);
+
 // RC3 preview owns its isolated database. Production migrations stay a
 // deliberate release action until the controlled-launch gates are approved.
 if (process.env.VERCEL_ENV === "preview" && process.env.DATABASE_URL) {
@@ -21,5 +23,4 @@ if (process.env.VERCEL_ENV === "preview" && process.env.DATABASE_URL) {
   run(prismaBin, ["db", "seed"]);
 }
 
-run(prismaBin, ["generate"]);
 run(nextBin, ["build"]);
