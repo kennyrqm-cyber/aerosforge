@@ -9,8 +9,14 @@ if (!secret || secret.length < 32) {
   throw new Error("BETTER_AUTH_SECRET must be configured with at least 32 characters.");
 }
 
-const allowedHosts = (process.env.BETTER_AUTH_ALLOWED_HOSTS ?? "localhost:3000,127.0.0.1:3000")
-  .split(",")
+const configuredAllowedHosts = process.env.BETTER_AUTH_ALLOWED_HOSTS
+  ?? "localhost:3000,127.0.0.1:3000";
+const vercelAllowedHosts = [process.env.VERCEL_BRANCH_URL, process.env.VERCEL_URL]
+  .filter((host): host is string => Boolean(host));
+const allowedHosts = [...new Set([
+  ...configuredAllowedHosts.split(","),
+  ...vercelAllowedHosts
+])]
   .map((host) => host.trim())
   .filter(Boolean);
 
