@@ -38,12 +38,11 @@ jobs:
           cp -a "$SRC/docs" .
           cp "$SRC/middleware.ts" "$SRC/next-env.d.ts" "$SRC/next.config.mjs" "$SRC/package.json" "$SRC/tsconfig.json" "$SRC/tsconfig.core.json" "$SRC/tsconfig.engine-test.json" "$SRC/vercel.json" "$SRC/deployment-manifest.json" "$SRC/release-provenance.json" "$SRC/README.md" .
           cp "$SRC/.npmrc" "$SRC/.nvmrc" "$SRC/.vercelignore" "$SRC/.env.example" .
-          cp "$SRC/.github/workflows/verify.yml" .github/workflows/verify.yml
       - name: Commit full RC source
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app components lib supabase scripts tests docs middleware.ts next-env.d.ts next.config.mjs package.json package-lock.json tsconfig.json tsconfig.core.json tsconfig.engine-test.json vercel.json deployment-manifest.json release-provenance.json README.md .npmrc .nvmrc .vercelignore .env.example .github/workflows/verify.yml
+          git add app components lib supabase scripts tests docs middleware.ts next-env.d.ts next.config.mjs package.json package-lock.json tsconfig.json tsconfig.core.json tsconfig.engine-test.json vercel.json deployment-manifest.json release-provenance.json README.md .npmrc .nvmrc .vercelignore .env.example
           if git diff --cached --quiet; then
             echo "RC source already materialized"
             exit 0
