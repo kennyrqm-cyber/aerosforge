@@ -1,0 +1,47 @@
+{
+  "name": "aerocomm-master-mvp",
+  "version": "1.0.4",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:core": "node --test tests/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "typecheck": "tsc --noEmit",
+    "typecheck:core": "tsc -p tsconfig.core.json",
+    "test:engine": "node scripts/run-engine-tests.mjs",
+    "verify:core": "npm run typecheck:core && npm run test:core && npm run test:engine && npm run test:integrity && npm run smoke",
+    "preflight": "node scripts/preflight.mjs",
+    "verify:release": "npm run verify:core && npm run preflight && npm run cloud:preflight && npm run ci:preflight && npm run deployment:manifest && npm run deployment:verify && npm run release:provenance && npm run release:provenance:verify",
+    "cloud:preflight": "node scripts/cloud-preflight.mjs",
+    "deployment:manifest": "node scripts/deployment-manifest.mjs",
+    "ci:preflight": "node scripts/ci-preflight.mjs",
+    "test:integrity": "node scripts/run-integrity-tests.mjs",
+    "deployment:verify": "node scripts/verify-deployment-manifest.mjs",
+    "lockfile:preflight": "node scripts/lockfile-preflight.mjs",
+    "package:release": "bash scripts/package-release.sh",
+    "release:provenance": "node scripts/release-provenance.mjs",
+    "release:provenance:verify": "node scripts/verify-release-provenance.mjs",
+    "build:diagnostic": "node scripts/build-diagnostic.mjs"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.6.1",
+    "@supabase/supabase-js": "2.57.4",
+    "next": "15.5.2",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.1",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "packageManager": "npm@10.9.2"
+}
