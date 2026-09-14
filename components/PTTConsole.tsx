@@ -13,7 +13,7 @@ export default function PTTConsole({onCapture,onTranscript}:Props){
  const [blobUrl,setBlobUrl]=useState<string>();
  const recorder=useRef<MediaRecorder|null>(null);
  const chunks=useRef<Blob[]>([]);
- const started=useRef<number>();
+ const started=useRef<number|undefined>(undefined);
 
  async function start(){
    if(recording) return;
