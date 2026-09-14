@@ -49,17 +49,57 @@ async function main() {
     () => updateCheckrideLeadStatusWorkflow({ actor: { id: student.id, role: Role.STUDENT }, leadId: first.id, status: LeadStatus.QUALIFIED }),
     "Only an Admin can update checkride leads."
   );
-  await updateCheckrideLeadStatusWorkflow({ actor: { id: admin.id, role: Role.ADMIN }, leadId: first.id, status: LeadStatus.QUALIFIED });
+  await expectRejection(
+    () => updateCheckrideLeadStatusWorkflow({ actor: { id: admin.id, role: Role.ADMIN }, leadId: first.id, status: LeadStatus.CONTACTED }),
+    "Open leads require a next follow-up date."
+  );
+  const nextFollowUpAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+  await updateCheckrideLeadStatusWorkflow({
+    actor: { id: admin.id, role: Role.ADMIN },
+    leadId: first.id,
+    status: LeadStatus.QUALIFIED,
+    internalNote: "Strong fit; confirm aircraft and practical-test target.",
+    nextFollowUpAt,
+    markContacted: true
+  });
 
   const [updated, createAudits, statusAudits] = await Promise.all([
     db.checkrideLead.findUniqueOrThrow({ where: { id: first.id } }),
     db.auditEvent.count({ where: { action: "CHECKRIDE_LEAD_CREATED", entityId: first.id } }),
     db.auditEvent.count({ where: { action: "CHECKRIDE_LEAD_STATUS_UPDATED", entityId: first.id } })
   ]);
-  if (updated.status !== LeadStatus.QUALIFIED || createAudits !== 1 || statusAudits !== 1) {
+  if (
+    updated.status !== LeadStatus.QUALIFIED ||
+    !updated.qualifiedAt ||
+    !updated.lastContactedAt ||
+    updated.internalNote !== "Strong fit; confirm aircraft and practical-test target." ||
+    updated.nextFollowUpAt?.getTime() !== nextFollowUpAt.getTime() ||
+    createAudits !== 1 ||
+    statusAudits !== 1
+  ) {
     throw new Error("Checkride pipeline state or audit history is incorrect.");
   }
-  console.log("Consented Checkride lead → duplicate suppression → Admin qualification integration passed.");
+  await db.checkrideLead.update({ where: { id: first.id }, data: { contactConsent: false } });
+  await expectRejection(
+    () => updateCheckrideLeadStatusWorkflow({
+      actor: { id: admin.id, role: Role.ADMIN },
+      leadId: first.id,
+      status: LeadStatus.QUALIFIED,
+      nextFollowUpAt,
+      markContacted: true
+    }),
+    "Cannot record contact without documented consent."
+  );
+  await db.checkrideLead.update({ where: { id: first.id }, data: { contactConsent: true } });
+  await updateCheckrideLeadStatusWorkflow({
+    actor: { id: admin.id, role: Role.ADMIN },
+    leadId: first.id,
+    status: LeadStatus.ENROLLED,
+    internalNote: updated.internalNote
+  });
+  const enrolled = await db.checkrideLead.findUniqueOrThrow({ where: { id: first.id } });
+  if (!enrolled.enrolledAt || enrolled.nextFollowUpAt !== null) throw new Error("Enrollment did not close the follow-up loop.");
+  console.log("Consented lead → duplicate suppression → Admin follow-up → qualification → enrollment integration passed.");
 }
 
 main().then(() => db.$disconnect()).catch(async (error) => {

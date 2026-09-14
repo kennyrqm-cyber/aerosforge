@@ -284,12 +284,19 @@ model CheckrideLead {
   consentAt        DateTime?
   privacyVersion   String?
   status           LeadStatus @default(NEW)
+  internalNote     String?
+  nextFollowUpAt   DateTime?
+  lastContactedAt  DateTime?
+  qualifiedAt      DateTime?
+  enrolledAt       DateTime?
+  closedAt         DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   user             User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([email])
   @@index([status, createdAt])
+  @@index([nextFollowUpAt, status])
   @@index([ratingGoal, createdAt])
 }
 

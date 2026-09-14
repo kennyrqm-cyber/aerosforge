@@ -88,3 +88,5 @@ The first commercial offer is the **AEROSFORGE Helicopter Checkride Accelerator*
 - Do not collect payment until checkout, refund, tax, support, and legal controls are ready.
 - Do not claim checkride success until cohort outcomes are measured.
 - Do not build FlightOps or a two-sided marketplace to avoid selling the focused offer.
+
+The Admin revenue control center must make every open lead answerable: current stage, last contact, next follow-up, internal context, and whether the follow-up is overdue. Pipeline rates are operational signals, not revenue.

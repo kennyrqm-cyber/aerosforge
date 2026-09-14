@@ -14,15 +14,36 @@ import { requireRole } from "@/lib/session";
 
 const leadStatuses = Object.values(LeadStatus);
 const assignmentStatuses = Object.values(AssignmentStatus);
+const terminalLeadStatuses = new Set<LeadStatus>([LeadStatus.ENROLLED, LeadStatus.CLOSED]);
+
+function dateTimeLocalValue(value: Date | null) {
+  return value ? value.toISOString().slice(0, 16) : "";
+}
 
 export default async function AdminDashboard() {
   const session = await requireRole(Role.ADMIN);
-  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
+  const now = new Date();
+  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, overdueCheckrideLeadCount, unscheduledCheckrideLeadCount, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: Role.STUDENT } }),
     db.user.count({ where: { role: Role.CFI } }),
     db.winchesterLead.count({ where: { status: { not: LeadStatus.CLOSED } } }),
-    db.checkrideLead.count({ where: { status: { not: LeadStatus.CLOSED } } }),
+    db.checkrideLead.count({ where: { status: { notIn: [LeadStatus.ENROLLED, LeadStatus.CLOSED] } } }),
+    db.checkrideLead.count(),
+    db.checkrideLead.count({ where: { qualifiedAt: { not: null } } }),
+    db.checkrideLead.count({ where: { enrolledAt: { not: null } } }),
+    db.checkrideLead.count({
+      where: {
+        nextFollowUpAt: { lt: now },
+        status: { notIn: [LeadStatus.ENROLLED, LeadStatus.CLOSED] }
+      }
+    }),
+    db.checkrideLead.count({
+      where: {
+        nextFollowUpAt: null,
+        status: { notIn: [LeadStatus.ENROLLED, LeadStatus.CLOSED] }
+      }
+    }),
     db.lesson.count({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } } }),
     db.lesson.findMany({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } }, orderBy: { order: "asc" }, take: 12 }),
     db.gauntletScenario.findMany({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } }, orderBy: [{ difficulty: "asc" }, { title: "asc" }], take: 12 }),
@@ -42,6 +63,7 @@ export default async function AdminDashboard() {
       take: 30
     })
   ]);
+  const qualificationRate = checkrideApplicationCount === 0 ? 0 : Math.round((qualifiedCheckrideLeadCount / checkrideApplicationCount) * 100);
 
   return <main>
     <div className="dashboardGrid">
@@ -89,9 +111,45 @@ export default async function AdminDashboard() {
         <div className="section">
           <div className="kicker">First revenue pipeline</div><h2>Checkride Accelerator applications</h2>
           <p className="muted">These are qualified-interest records—not enrollments or payments. Contact only applicants with recorded consent.</p>
-          <div className="card tableWrap">
-            <table><thead><tr><th>Applicant</th><th>Goal</th><th>Timing</th><th>Acquisition</th><th>Consent</th><th>Status</th></tr></thead><tbody>{checkrideLeadRows.length === 0 ? <tr><td colSpan={6} className="muted">No Checkride Accelerator applications yet.</td></tr> : checkrideLeadRows.map((lead) => <tr key={lead.id}><td><strong>{lead.firstName} {lead.lastName}</strong><br/><a href={`mailto:${lead.email}`}>{lead.email}</a>{lead.phone ? <><br/><span className="muted">{lead.phone}</span></> : null}</td><td>{lead.ratingGoal}<br/><span className="muted">{lead.certificateLevel} • {lead.aircraft ?? "aircraft not set"}</span></td><td>{lead.targetCheckride ?? "—"}<br/><span className="muted">{lead.preferredFormat ?? "—"}</span></td><td>{lead.source ?? "direct"}<br/><span className="muted">{lead.campaign ?? "—"}</span></td><td>{lead.contactConsent && lead.consentAt ? <span className="badge success">YES</span> : <span className="badge danger">NO</span>}<br/><span className="muted finePrint">{lead.privacyVersion ?? "no version"}</span></td><td><form className="inlineForm" action={updateCheckrideLeadStatus.bind(null, lead.id)}><select name="status" defaultValue={lead.status}>{leadStatuses.map((status) => <option key={status}>{status}</option>)}</select><button type="submit">Save</button></form></td></tr>)}</tbody></table>
+          <div className="metricRow revenueMetrics">
+            <div className="metric"><strong>{checkrideApplicationCount}</strong><span className="label">Applications</span></div>
+            <div className="metric"><strong>{qualifiedCheckrideLeadCount}</strong><span className="label">Qualified or beyond</span></div>
+            <div className="metric"><strong>{qualificationRate}%</strong><span className="label">Application → qualified</span></div>
+            <div className="metric"><strong>{enrolledCheckrideLeadCount}</strong><span className="label">Enrolled, not paid</span></div>
+            <div className={`metric ${overdueCheckrideLeadCount > 0 ? "metricDanger" : ""}`}><strong>{overdueCheckrideLeadCount}</strong><span className="label">Overdue follow-ups</span></div>
+            <div className={`metric ${unscheduledCheckrideLeadCount > 0 ? "metricDanger" : ""}`}><strong>{unscheduledCheckrideLeadCount}</strong><span className="label">Missing next action</span></div>
           </div>
+          {checkrideLeadRows.length === 0 ? <div className="card"><p className="muted">No Checkride Accelerator applications yet.</p></div> : <div className="leadOpsGrid">{checkrideLeadRows.map((lead) => {
+            const terminal = terminalLeadStatuses.has(lead.status);
+            const overdue = Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now && !terminal);
+            const unscheduled = !lead.nextFollowUpAt && !terminal;
+            return <article className={`card leadOpsCard ${overdue ? "overdueLead" : ""}`} key={lead.id}>
+              <div className="leadOpsHeader">
+                <div><span className="badge">{lead.status}</span>{overdue ? <span className="badge danger">FOLLOW-UP OVERDUE</span> : null}{unscheduled ? <span className="badge danger">NEXT ACTION MISSING</span> : null}<h3>{lead.firstName} {lead.lastName}</h3></div>
+                <div className="muted finePrint">Applied {lead.createdAt.toLocaleString("en-US")}</div>
+              </div>
+              <div className="leadFacts">
+                <div><span className="label">Contact</span>{lead.contactConsent && lead.consentAt ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : <span>{lead.email}</span>}{lead.phone ? <span>{lead.phone}</span> : null}</div>
+                <div><span className="label">Goal</span><strong>{lead.ratingGoal}</strong><span>{lead.certificateLevel} • {lead.aircraft ?? "aircraft not set"}</span></div>
+                <div><span className="label">Timing</span><strong>{lead.targetCheckride ?? "—"}</strong><span>{lead.preferredFormat ?? "—"}</span></div>
+                <div><span className="label">Acquisition</span><strong>{lead.source ?? "direct"}</strong><span>{lead.campaign ?? "—"}</span></div>
+              </div>
+              {lead.biggestChallenge ? <p className="leadChallenge"><strong>Preparation challenge:</strong> {lead.biggestChallenge}</p> : null}
+              <p className="finePrint muted">Consent: {lead.contactConsent && lead.consentAt ? `YES • ${lead.consentAt.toLocaleString("en-US")}` : "NO — DO NOT CONTACT"} • Notice {lead.privacyVersion ?? "not recorded"}</p>
+              <form className="opsForm leadPipelineForm" action={updateCheckrideLeadStatus.bind(null, lead.id)}>
+                <div className="formGrid">
+                  <label>Pipeline stage<select name="status" defaultValue={lead.status}>{leadStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+                  <label>Next follow-up <span className="muted">(UTC)</span><input name="nextFollowUpAt" type="datetime-local" defaultValue={dateTimeLocalValue(lead.nextFollowUpAt)}/></label>
+                </div>
+                <label>Internal follow-up note<textarea name="internalNote" rows={3} maxLength={2000} defaultValue={lead.internalNote ?? ""} placeholder="Outcome, objection, next commitment, or reason for closure"/></label>
+                <label className="consent contactCheck"><input name="markContacted" value="yes" type="checkbox" disabled={!lead.contactConsent || !lead.consentAt}/><span>Record that I contacted this applicant now</span></label>
+                <div className="leadOpsFooter">
+                  <span className="finePrint muted">Last contact: {lead.lastContactedAt?.toLocaleString("en-US") ?? "not recorded"} • Qualified: {lead.qualifiedAt?.toLocaleString("en-US") ?? "not yet"} • Enrolled: {lead.enrolledAt?.toLocaleString("en-US") ?? "not yet"}</span>
+                  <button type="submit">Save pipeline</button>
+                </div>
+              </form>
+            </article>;
+          })}</div>}
         </div>
 
         <div className="section">

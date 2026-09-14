@@ -11,7 +11,7 @@ export default function PrivacyPage() {
         <h2>What AEROSFORGE ONE collects</h2>
         <p>Account features may store your name, email address, authentication records, learning progress, badges, scenario attempts, and profile information you choose to provide.</p>
         <p>The Winchester interest pathway may store your name, email, optional phone number, experience level, desired start timing, message, the fact that you consented to contact, the time of that consent, and the privacy-notice version shown when you submitted.</p>
-        <p>The Checkride Accelerator application may store your name, email, optional phone number, current certificate level, rating goal, training aircraft, target checkride timing, preparation challenge, preferred format, campaign/source labels, contact consent, consent time, and the privacy-notice version shown when you submitted.</p>
+        <p>The Checkride Accelerator application may store your name, email, optional phone number, current certificate level, rating goal, training aircraft, target checkride timing, preparation challenge, preferred format, campaign/source labels, contact consent, consent time, and the privacy-notice version shown when you submitted. Authorized administrators may also record internal follow-up notes, pipeline status, next-action dates, and contact, qualification, enrollment, or closure timestamps.</p>
         <h2>Why it is used</h2>
         <p>We use this information to operate accounts, protect the service, track learning progress, support instructor workflows, respond to Winchester pathway requests, maintain audit records, and improve the platform.</p>
         <h2>Winchester contact consent</h2>

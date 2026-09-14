@@ -349,10 +349,16 @@ export async function updateCheckrideLeadStatus(leadId: string, formData: FormDa
   const safeLeadId = requiredText(leadId, "Lead", 128);
   const statusText = requiredText(formData.get("status"), "Lead status", 40).toUpperCase();
   if (!Object.values(LeadStatus).includes(statusText as LeadStatus)) throw new Error("Invalid lead status.");
+  const followUpText = optionalText(formData.get("nextFollowUpAt"), 40);
+  const nextFollowUpAt = followUpText ? new Date(followUpText) : null;
+  if (nextFollowUpAt && Number.isNaN(nextFollowUpAt.getTime())) throw new Error("Enter a valid next follow-up date.");
   await updateCheckrideLeadStatusWorkflow({
     actor: session.user,
     leadId: safeLeadId,
-    status: statusText as LeadStatus
+    status: statusText as LeadStatus,
+    internalNote: optionalText(formData.get("internalNote"), 2000) ?? null,
+    nextFollowUpAt,
+    markContacted: formData.get("markContacted") === "yes"
   });
   revalidatePath("/dashboard/admin");
 }

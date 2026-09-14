@@ -13,6 +13,7 @@ Release-candidate foundation for an aviation education and operations platform.
 - Controlled public-signup, Winchester-lead, search-indexing, and account-email flags
 - Focused Helicopter Checkride Accelerator offer and consented qualification pipeline
 - Admin-owned checkride lead status workflow with acquisition labels, duplicate suppression, and audit history
+- Founder revenue control center with follow-up dates, internal notes, stage timestamps, overdue signals, and funnel metrics
 - Email verification and password recovery integration prepared for Resend
 - Password-reset session revocation and database-backed auth rate limiting
 - Health, role-boundary, content-workflow, recovery-gate, schema, and security checks
