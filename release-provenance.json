@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "service": "aerocomm-master",
+  "version": "1.0.4",
+  "releaseChannel": "release-candidate",
+  "parentRelease": {
+    "version": "1.0.2",
+    "artifact": "AeroComm_Master_MVP_v1.0.2_RC.zip",
+    "sha256": "4e042fde1fcf6419576f60b227e891f5a0a953f77b237a9a12b55380718cbc53"
+  },
+  "deploymentManifestSha256": "c08881bbaf50e980f90767444e72aa215a0e5ba7e20eba61335d4e97e5edc18d",
+  "rollbackPolicy": "application-forward-or-previous-compatible-release; never auto-down-migrate database"
+}

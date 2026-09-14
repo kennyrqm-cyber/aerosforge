@@ -1,0 +1,4 @@
+.core-build
+.engine-test-build
+tsconfig.tsbuildinfo
+*.zip

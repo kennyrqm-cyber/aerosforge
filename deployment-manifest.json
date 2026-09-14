@@ -1,0 +1,45 @@
+{
+  "formatVersion": 1,
+  "service": "aerocomm-master",
+  "version": "1.0.4",
+  "criticalFiles": {
+    "package.json": "bd7ea22558912a6b97d39f074725097fe0e47fce40273d1587362c0f383db396",
+    "next.config.mjs": "abb21805d1a1913e7cec09158ed4fdbb945ab49cae713b957f2ecb1ed7c334fd",
+    "middleware.ts": "98b7607b32e07d691d7687e67be6bd830b851595991290b735afb03410832fcf",
+    "lib/release.ts": "0191029c1d450a971895b9ed8bd7390dc1279d27bbdc01fa381a165648150b5a",
+    "lib/integrity.ts": "9e79e01c4a93db6a6a765dcf373ae483167291ff853079c8aef1b966bde509c6",
+    "lib/audit.ts": "447090635e97787fe6fcae8a2bcce8617f362b924a870dddea28cecd205e82d4",
+    "lib/certificate.ts": "0027038db39b9974c3841689ed0c9c84817ad49d5965da81bc3c27ee536e3f45",
+    "lib/atc/engine.ts": "23c7fc6d066fde20f850e29c06900fc24b0b17fbdc090b3b901d7c7816321a0d",
+    "lib/atc/scoring.ts": "df9a9e0a4918fef174c60c751ffd875666598d332b161ac3ec81ff2f52075416",
+    "lib/atc/validate.ts": "97fc878f3a846a0270f1149a6b554ae47913278d9cecb80e005c08e7d99f3964",
+    "lib/atc/scenarios.ts": "799af0dd536f43f411da88c31cfdd275906705382645394108a9057243e1b6aa",
+    "app/api/transcribe/route.ts": "fb438eae8f93503e9222e979c650fe24b90e40f71f200e0b4175d94da9118840",
+    "app/api/realtime/call/route.ts": "34340fc3adef343aed3af2a7c77e70ba85668825b1939fb3bb208e4df6b3390b",
+    "app/api/readiness/route.ts": "bb0f7c20c6e8dd49a8eabc35dbadc6e990cd63c8c7f2925d2bd2970fa5d6da0e",
+    "app/api/certificates/verify/route.ts": "d5c09c4e54391c5e58492a5cbfa588add4ca97e78514237f49e9a78507aedd6b"
+  },
+  "migrations": {
+    "supabase/migrations/0001_core.sql": "97e99f1467b45a248cb3bfd3dc60e80d2816f53a453f1dcb8fc1a64ce55026bb",
+    "supabase/migrations/0002_voice_attempt_rls.sql": "05ba238c3f27c09b46f7e372d1c53b6bb07b2a90d41a7e125f674addf153c584",
+    "supabase/migrations/0003_attempts_instructor.sql": "190f89690b73dfde3e6149808d66d27391b7b152d68c83c8dd20509b2630fce6",
+    "supabase/migrations/0004_staff_rls_helper.sql": "b57ca4a98e1c16610069f6c6c493281a39e889a32cfe9e392ea18da7fef7acfa",
+    "supabase/migrations/0005_auth_profile_hardening.sql": "1e913dad790b6cd47d23948bb88ae7ccf107122fc00da6c6f0676c217aeb114a",
+    "supabase/migrations/0006_provider_quota.sql": "4c6f08943129d0f2dd0934e1f4f267af721574cedb03c86a77edb78180118ce5",
+    "supabase/migrations/0007_integrity_hardening.sql": "609766dfdde38973d1a24302ba23ab2d82b5f69a498f19915b7301ef43a9a65c",
+    "supabase/migrations/0008_certificate_signature_version.sql": "9189d4e991b467f4856a1e06c2f9b7ebd8b1087e20f56366037d8a1affbb8d4b"
+  },
+  "requiredEnvironment": [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "OPENAI_API_KEY"
+  ],
+  "optionalEnvironment": [
+    "OPENAI_TRANSCRIPTION_MODEL",
+    "OPENAI_REALTIME_MODEL",
+    "OPENAI_REALTIME_TRANSCRIPTION_MODEL",
+    "AEROCOMM_ENABLE_REALTIME",
+    "NEXT_PUBLIC_AEROCOMM_REALTIME",
+    "AEROCOMM_CERTIFICATE_SIGNING_SECRET"
+  ]
+}
