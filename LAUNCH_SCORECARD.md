@@ -19,6 +19,10 @@
 - Pilot Passport activations
 
 ### Commercial
+- Checkride Accelerator visitors
+- Checkride Accelerator applications
+- Application-to-qualified rate
+- Qualified-to-enrolled rate
 - Qualified leads
 - Calls booked
 - Proposals sent
@@ -74,3 +78,13 @@ Do not enable public signup or sell access until each item below has named evide
 - accessibility and supported-client acceptance testing.
 
 No evidence means no launch. Founder confidence is not evidence.
+
+## First revenue wedge
+
+The first commercial offer is the **AEROSFORGE Helicopter Checkride Accelerator**. It must earn the right to expand.
+
+- Do not count applications as customers.
+- Do not count planned prices as revenue.
+- Do not collect payment until checkout, refund, tax, support, and legal controls are ready.
+- Do not claim checkride success until cohort outcomes are measured.
+- Do not build FlightOps or a two-sided marketplace to avoid selling the focused offer.

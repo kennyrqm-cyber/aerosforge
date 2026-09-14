@@ -23,6 +23,7 @@
     "security:static": "node scripts/static-security-check.mjs",
     "smoke:postdeploy": "node scripts/postdeploy-smoke.mjs",
     "test:content-workflow": "tsx scripts/content-workflow-integration.ts",
+    "test:checkride-leads": "tsx scripts/checkride-lead-integration.ts",
     "preflight": "npm run security:static && npm run schema:static && npm run release:gates",
     "role:set": "tsx scripts/set-user-role.ts",
     "schema:static": "node scripts/schema-static-check.mjs",

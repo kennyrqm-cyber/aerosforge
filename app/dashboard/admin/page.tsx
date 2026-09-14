@@ -6,6 +6,7 @@ import {
   publishLesson,
   publishScenario,
   updateAssignmentStatus,
+  updateCheckrideLeadStatus,
   updateWinchesterLeadStatus
 } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -16,11 +17,12 @@ const assignmentStatuses = Object.values(AssignmentStatus);
 
 export default async function AdminDashboard() {
   const session = await requireRole(Role.ADMIN);
-  const [users, students, cfis, openLeadCount, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, leadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
+  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: Role.STUDENT } }),
     db.user.count({ where: { role: Role.CFI } }),
     db.winchesterLead.count({ where: { status: { not: LeadStatus.CLOSED } } }),
+    db.checkrideLead.count({ where: { status: { not: LeadStatus.CLOSED } } }),
     db.lesson.count({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } } }),
     db.lesson.findMany({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } }, orderBy: { order: "asc" }, take: 12 }),
     db.gauntletScenario.findMany({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } }, orderBy: [{ difficulty: "asc" }, { title: "asc" }], take: 12 }),
@@ -28,6 +30,7 @@ export default async function AdminDashboard() {
     db.gauntletScenario.findMany({ where: { status: "APPROVED" }, orderBy: [{ difficulty: "asc" }, { title: "asc" }], take: 20 }),
     db.auditEvent.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
     db.winchesterLead.findMany({ orderBy: { createdAt: "desc" }, take: 25 }),
+    db.checkrideLead.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
     db.user.findMany({ where: { role: Role.CFI }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" }, take: 100 }),
     db.user.findMany({ where: { role: Role.STUDENT }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" }, take: 200 }),
     db.cfiStudentAssignment.findMany({
@@ -48,6 +51,7 @@ export default async function AdminDashboard() {
         <p className="muted">AEROSFORGE ONE command</p>
         <div className="stack">
           <Link className="button" href="/dashboard/cfi">Open CFI review queue</Link>
+          <Link className="button" href="/checkride">Checkride offer</Link>
           <Link className="button" href="/winchester">Winchester pathway</Link>
           <Link className="button" href="/privacy">Privacy notice</Link>
           <SignOutButton/>
@@ -60,7 +64,7 @@ export default async function AdminDashboard() {
           <div className="metric"><strong>{users}</strong><span className="label">Users</span></div>
           <div className="metric"><strong>{students}</strong><span className="label">Students</span></div>
           <div className="metric"><strong>{cfis}</strong><span className="label">CFIs</span></div>
-          <div className="metric"><strong>{openLeadCount}</strong><span className="label">Open Winchester leads</span></div>
+          <div className="metric"><strong>{checkrideOpenLeadCount}</strong><span className="label">Open checkride leads</span></div>
         </div>
         <div className="grid2">
           <div className="card"><h3>Content gate</h3><p><strong>{draftCount}</strong> lessons are draft/in review.</p><p className="muted">Student pages expose PUBLISHED content only.</p></div>
@@ -83,10 +87,18 @@ export default async function AdminDashboard() {
         </div>
 
         <div className="section">
-          <div className="kicker">Winchester pipeline</div><h2>Lead operations</h2>
-          <p className="muted">Contact only records that carry explicit consent. Status changes are audited.</p>
+          <div className="kicker">First revenue pipeline</div><h2>Checkride Accelerator applications</h2>
+          <p className="muted">These are qualified-interest records—not enrollments or payments. Contact only applicants with recorded consent.</p>
           <div className="card tableWrap">
-            <table><thead><tr><th>Lead</th><th>Path</th><th>Consent</th><th>Created</th><th>Status</th></tr></thead><tbody>{leadRows.length === 0 ? <tr><td colSpan={5} className="muted">No leads yet.</td></tr> : leadRows.map((lead) => <tr key={lead.id}><td><strong>{lead.firstName} {lead.lastName}</strong><br/><a href={`mailto:${lead.email}`}>{lead.email}</a>{lead.phone ? <><br/><span className="muted">{lead.phone}</span></> : null}</td><td>{lead.experienceLevel ?? "—"}<br/><span className="muted">{lead.targetStart ?? "—"}</span></td><td>{lead.contactConsent && lead.consentAt ? <span className="badge success">YES</span> : <span className="badge danger">NO</span>}<br/><span className="muted finePrint">{lead.privacyVersion ?? "no version"}</span></td><td>{lead.createdAt.toLocaleDateString("en-US")}</td><td><form className="inlineForm" action={updateWinchesterLeadStatus.bind(null, lead.id)}><select name="status" defaultValue={lead.status}>{leadStatuses.map((status) => <option key={status}>{status}</option>)}</select><button type="submit">Save</button></form></td></tr>)}</tbody></table>
+            <table><thead><tr><th>Applicant</th><th>Goal</th><th>Timing</th><th>Acquisition</th><th>Consent</th><th>Status</th></tr></thead><tbody>{checkrideLeadRows.length === 0 ? <tr><td colSpan={6} className="muted">No Checkride Accelerator applications yet.</td></tr> : checkrideLeadRows.map((lead) => <tr key={lead.id}><td><strong>{lead.firstName} {lead.lastName}</strong><br/><a href={`mailto:${lead.email}`}>{lead.email}</a>{lead.phone ? <><br/><span className="muted">{lead.phone}</span></> : null}</td><td>{lead.ratingGoal}<br/><span className="muted">{lead.certificateLevel} • {lead.aircraft ?? "aircraft not set"}</span></td><td>{lead.targetCheckride ?? "—"}<br/><span className="muted">{lead.preferredFormat ?? "—"}</span></td><td>{lead.source ?? "direct"}<br/><span className="muted">{lead.campaign ?? "—"}</span></td><td>{lead.contactConsent && lead.consentAt ? <span className="badge success">YES</span> : <span className="badge danger">NO</span>}<br/><span className="muted finePrint">{lead.privacyVersion ?? "no version"}</span></td><td><form className="inlineForm" action={updateCheckrideLeadStatus.bind(null, lead.id)}><select name="status" defaultValue={lead.status}>{leadStatuses.map((status) => <option key={status}>{status}</option>)}</select><button type="submit">Save</button></form></td></tr>)}</tbody></table>
+          </div>
+        </div>
+
+        <div className="section">
+          <div className="kicker">Winchester pipeline</div><h2>Lead operations</h2>
+          <p className="muted"><strong>{winchesterOpenLeadCount}</strong> open Winchester leads. Contact only records that carry explicit consent. Status changes are audited.</p>
+          <div className="card tableWrap">
+            <table><thead><tr><th>Lead</th><th>Path</th><th>Consent</th><th>Created</th><th>Status</th></tr></thead><tbody>{winchesterLeadRows.length === 0 ? <tr><td colSpan={5} className="muted">No leads yet.</td></tr> : winchesterLeadRows.map((lead) => <tr key={lead.id}><td><strong>{lead.firstName} {lead.lastName}</strong><br/><a href={`mailto:${lead.email}`}>{lead.email}</a>{lead.phone ? <><br/><span className="muted">{lead.phone}</span></> : null}</td><td>{lead.experienceLevel ?? "—"}<br/><span className="muted">{lead.targetStart ?? "—"}</span></td><td>{lead.contactConsent && lead.consentAt ? <span className="badge success">YES</span> : <span className="badge danger">NO</span>}<br/><span className="muted finePrint">{lead.privacyVersion ?? "no version"}</span></td><td>{lead.createdAt.toLocaleDateString("en-US")}</td><td><form className="inlineForm" action={updateWinchesterLeadStatus.bind(null, lead.id)}><select name="status" defaultValue={lead.status}>{leadStatuses.map((status) => <option key={status}>{status}</option>)}</select><button type="submit">Save</button></form></td></tr>)}</tbody></table>
           </div>
         </div>
 

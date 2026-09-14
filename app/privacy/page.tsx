@@ -11,10 +11,13 @@ export default function PrivacyPage() {
         <h2>What AEROSFORGE ONE collects</h2>
         <p>Account features may store your name, email address, authentication records, learning progress, badges, scenario attempts, and profile information you choose to provide.</p>
         <p>The Winchester interest pathway may store your name, email, optional phone number, experience level, desired start timing, message, the fact that you consented to contact, the time of that consent, and the privacy-notice version shown when you submitted.</p>
+        <p>The Checkride Accelerator application may store your name, email, optional phone number, current certificate level, rating goal, training aircraft, target checkride timing, preparation challenge, preferred format, campaign/source labels, contact consent, consent time, and the privacy-notice version shown when you submitted.</p>
         <h2>Why it is used</h2>
         <p>We use this information to operate accounts, protect the service, track learning progress, support instructor workflows, respond to Winchester pathway requests, maintain audit records, and improve the platform.</p>
         <h2>Winchester contact consent</h2>
         <p>Submitting the Winchester form requires explicit consent to be contacted about that pathway. Submission is not enrollment, does not reserve a training slot, and creates no purchase obligation.</p>
+        <h2>Checkride Accelerator contact consent</h2>
+        <p>Submitting the Checkride Accelerator form requires explicit consent to be contacted about the proposed program. Submission is not enrollment, does not guarantee acceptance or checkride success, and creates no purchase obligation.</p>
         <h2>Safety and aviation records</h2>
         <p>AEROSFORGE ONE is an educational platform. The current system is not an FAA certification system and should not be used as the official record for pilot certificates, endorsements, aircraft maintenance, flight time, or regulatory compliance.</p>
         <h2>Access and security</h2>
@@ -25,7 +28,7 @@ export default function PrivacyPage() {
         <p>Production infrastructure providers may process information on behalf of AEROSFORGE. Payments are not part of this release candidate. A final notice must identify applicable production vendors and legal bases before commercial launch.</p>
         <h2>Questions or requests</h2>
         <p>Before production launch, AEROSFORGE must publish a monitored privacy-contact channel for access, correction, deletion, and other privacy requests.</p>
-        <p><Link className="button" href="/winchester">Return to Winchester pathway</Link></p>
+        <p><Link className="button" href="/checkride">Return to Checkride Accelerator</Link></p>
       </div>
     </section>
   </main>;

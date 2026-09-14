@@ -9,6 +9,7 @@ import {
   reviewLessonWorkflow,
   reviewScenarioWorkflow
 } from "@/lib/content-workflow";
+import { createCheckrideLead, updateCheckrideLeadStatusWorkflow } from "@/lib/checkride-leads";
 import { db } from "@/lib/db";
 import { getAppSession, requireRole } from "@/lib/session";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
@@ -215,6 +216,34 @@ export async function submitWinchesterLead(formData: FormData) {
   redirect("/winchester?submitted=1");
 }
 
+export async function submitCheckrideLead(formData: FormData) {
+  if (process.env.CHECKRIDE_LEADS_ENABLED !== "true") throw new Error("Checkride Accelerator interest collection is not open yet.");
+  if (optionalText(formData.get("website"), 200)) redirect("/checkride?submitted=1");
+
+  const session = await getAppSession();
+  const contactConsent = formData.get("contactConsent") === "yes";
+  if (!contactConsent) throw new Error("Contact consent is required to submit the Checkride Accelerator form.");
+
+  await createCheckrideLead({
+    userId: session?.user.id,
+    firstName: requiredText(formData.get("firstName"), "First name", 80),
+    lastName: requiredText(formData.get("lastName"), "Last name", 80),
+    email: normalizedEmail(formData.get("email")),
+    phone: optionalText(formData.get("phone"), 40),
+    certificateLevel: requiredText(formData.get("certificateLevel"), "Certificate level", 120),
+    ratingGoal: requiredText(formData.get("ratingGoal"), "Rating goal", 120),
+    aircraft: optionalText(formData.get("aircraft"), 120),
+    targetCheckride: optionalText(formData.get("targetCheckride"), 120),
+    biggestChallenge: optionalText(formData.get("biggestChallenge"), 1200),
+    preferredFormat: optionalText(formData.get("preferredFormat"), 120),
+    source: optionalText(formData.get("source"), 120),
+    campaign: optionalText(formData.get("campaign"), 120),
+    contactConsent: true,
+    privacyVersion: PRIVACY_NOTICE_VERSION
+  });
+  redirect("/checkride?submitted=1");
+}
+
 export async function reviewLesson(lessonId: string, formData: FormData) {
   const session = await requireRole(Role.CFI, Role.ADMIN);
   const safeLessonId = requiredText(lessonId, "Lesson", 128);
@@ -311,6 +340,19 @@ export async function updateWinchesterLeadStatus(leadId: string, formData: FormD
         metadata: { previousStatus: lead.status, status }
       }
     });
+  });
+  revalidatePath("/dashboard/admin");
+}
+
+export async function updateCheckrideLeadStatus(leadId: string, formData: FormData) {
+  const session = await requireRole(Role.ADMIN);
+  const safeLeadId = requiredText(leadId, "Lead", 128);
+  const statusText = requiredText(formData.get("status"), "Lead status", 40).toUpperCase();
+  if (!Object.values(LeadStatus).includes(statusText as LeadStatus)) throw new Error("Invalid lead status.");
+  await updateCheckrideLeadStatusWorkflow({
+    actor: session.user,
+    leadId: safeLeadId,
+    status: statusText as LeadStatus
   });
   revalidatePath("/dashboard/admin");
 }

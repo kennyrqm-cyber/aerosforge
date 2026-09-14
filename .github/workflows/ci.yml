@@ -55,6 +55,7 @@ jobs:
       - run: npm run db:deploy
       - run: npm run db:seed
       - run: npm run test:content-workflow
+      - run: npm run test:checkride-leads
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
@@ -73,4 +74,5 @@ jobs:
         env:
           APP_URL: http://127.0.0.1:3000
           EXPECT_EMAIL_DELIVERY_DISABLED: "true"
+          EXPECT_CHECKRIDE_LEADS_DISABLED: "true"
         run: npm run smoke:postdeploy

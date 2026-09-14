@@ -11,6 +11,8 @@ Release-candidate foundation for an aviation education and operations platform.
 - Independent CFI approval followed by separate Admin publication
 - Version-bound review records and audit events
 - Controlled public-signup, Winchester-lead, search-indexing, and account-email flags
+- Focused Helicopter Checkride Accelerator offer and consented qualification pipeline
+- Admin-owned checkride lead status workflow with acquisition labels, duplicate suppression, and audit history
 - Email verification and password recovery integration prepared for Resend
 - Password-reset session revocation and database-backed auth rate limiting
 - Health, role-boundary, content-workflow, recovery-gate, schema, and security checks
@@ -23,6 +25,7 @@ All public capabilities remain closed unless their exact flags and dependencies 
 - `PUBLIC_SIGNUP_ENABLED` requires verified account email delivery.
 - `AUTH_EMAIL_DELIVERY_ENABLED` requires both `RESEND_API_KEY` and `AUTH_EMAIL_FROM`.
 - `WINCHESTER_LEADS_ENABLED` controls lead submission.
+- `CHECKRIDE_LEADS_ENABLED` controls Checkride Accelerator applications.
 - `PUBLIC_INDEXING_ENABLED` controls search-engine indexing.
 - CI test identities require GitHub Actions plus an explicit E2E flag and password.
 
@@ -39,6 +42,7 @@ AEROSFORGE does not issue FAA certificates or WINGS credit and does not replace 
 - Add production monitoring, alerting, and an on-call owner.
 - Complete accessibility and supported-device/browser acceptance testing.
 - Approve production content through the independent CFI/Admin workflow.
+- Validate the Checkride Accelerator offer with real helicopter students before building broader marketplace or FlightOps scope.
 
 Until those gates are evidenced, this branch is a release candidate—not a public production launch.
 
