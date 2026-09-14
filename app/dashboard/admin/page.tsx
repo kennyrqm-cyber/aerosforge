@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AssignmentStatus, LeadStatus, Role } from "@/generated/prisma/client";
+import { AssignmentStatus, LeadStatus, PrivacyRequestStatus, Role } from "@/generated/prisma/client";
 import { SignOutButton } from "@/components/sign-out-button";
 import {
   assignStudentToCfi,
@@ -7,6 +7,7 @@ import {
   publishScenario,
   updateAssignmentStatus,
   updateCheckrideLeadStatus,
+  updatePrivacyRequestStatus,
   updateWinchesterLeadStatus
 } from "@/lib/actions";
 import { db } from "@/lib/db";
@@ -14,7 +15,9 @@ import { requireRole } from "@/lib/session";
 
 const leadStatuses = Object.values(LeadStatus);
 const assignmentStatuses = Object.values(AssignmentStatus);
+const privacyRequestStatuses = Object.values(PrivacyRequestStatus);
 const terminalLeadStatuses = new Set<LeadStatus>([LeadStatus.ENROLLED, LeadStatus.CLOSED]);
+const terminalPrivacyStatuses: PrivacyRequestStatus[] = [PrivacyRequestStatus.COMPLETED, PrivacyRequestStatus.DENIED];
 
 function dateTimeLocalValue(value: Date | null) {
   return value ? value.toISOString().slice(0, 16) : "";
@@ -23,7 +26,7 @@ function dateTimeLocalValue(value: Date | null) {
 export default async function AdminDashboard() {
   const session = await requireRole(Role.ADMIN);
   const now = new Date();
-  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, overdueCheckrideLeadCount, unscheduledCheckrideLeadCount, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
+  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, overdueCheckrideLeadCount, unscheduledCheckrideLeadCount, privacyOpenCount, privacyOverdueCount, privacyIdentityPendingCount, privacyRequestRows, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: Role.STUDENT } }),
     db.user.count({ where: { role: Role.CFI } }),
@@ -41,9 +44,16 @@ export default async function AdminDashboard() {
     db.checkrideLead.count({
       where: {
         nextFollowUpAt: null,
+        contactConsent: true,
         status: { notIn: [LeadStatus.ENROLLED, LeadStatus.CLOSED] }
       }
     }),
+    db.privacyRequest.count({ where: { status: { notIn: terminalPrivacyStatuses } } }),
+    db.privacyRequest.count({
+      where: { dueAt: { lt: now }, status: { notIn: terminalPrivacyStatuses } }
+    }),
+    db.privacyRequest.count({ where: { status: PrivacyRequestStatus.IDENTITY_PENDING } }),
+    db.privacyRequest.findMany({ orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }], take: 50 }),
     db.lesson.count({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } } }),
     db.lesson.findMany({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } }, orderBy: { order: "asc" }, take: 12 }),
     db.gauntletScenario.findMany({ where: { status: { in: ["DRAFT", "IN_REVIEW"] } }, orderBy: [{ difficulty: "asc" }, { title: "asc" }], take: 12 }),
@@ -94,6 +104,39 @@ export default async function AdminDashboard() {
         </div>
 
         <div className="section">
+          <div className="kicker">Privacy operations</div><h2>Data-rights case queue</h2>
+          <p className="muted">Verify identity outside this screen before marking a case VERIFIED. Never request passwords, medical records, government IDs, or certificate images through the public form. Completion records the case decision; it does not automatically erase data.</p>
+          <div className="metricRow">
+            <div className="metric"><strong>{privacyOpenCount}</strong><span className="label">Open cases</span></div>
+            <div className={`metric ${privacyOverdueCount > 0 ? "metricDanger" : ""}`}><strong>{privacyOverdueCount}</strong><span className="label">Past target</span></div>
+            <div className="metric"><strong>{privacyIdentityPendingCount}</strong><span className="label">Identity pending</span></div>
+          </div>
+          {privacyRequestRows.length === 0 ? <div className="card"><p className="muted">No privacy requests recorded.</p></div> : <div className="leadOpsGrid">{privacyRequestRows.map((request) => {
+            const terminal = terminalPrivacyStatuses.includes(request.status);
+            const overdue = request.dueAt < now && !terminal;
+            return <article className={`card leadOpsCard ${overdue ? "overdueLead" : ""}`} key={request.id}>
+              <div className="leadOpsHeader">
+                <div><span className="badge">{request.requestType}</span><span className="badge">{request.status}</span>{overdue ? <span className="badge danger">RESPONSE TARGET MISSED</span> : null}<h3>{request.firstName} {request.lastName}</h3></div>
+                <div className="muted finePrint">Received {request.createdAt.toLocaleString("en-US")}</div>
+              </div>
+              <div className="leadFacts">
+                <div><span className="label">Requester</span><a href={`mailto:${request.email}`}>{request.email}</a></div>
+                <div><span className="label">Response target</span><strong>{request.dueAt.toLocaleString("en-US")}</strong></div>
+                <div><span className="label">Identity verified</span><strong>{request.identityVerifiedAt?.toLocaleString("en-US") ?? "NO"}</strong></div>
+                <div><span className="label">Resolved</span><strong>{request.resolvedAt?.toLocaleString("en-US") ?? "OPEN"}</strong></div>
+              </div>
+              {request.details ? <p className="leadChallenge"><strong>Request details:</strong> {request.details}</p> : null}
+              <p className="finePrint muted">Notice version: {request.privacyVersion}</p>
+              <form className="opsForm leadPipelineForm" action={updatePrivacyRequestStatus.bind(null, request.id)}>
+                <label>Case status<select name="status" defaultValue={request.status}>{privacyRequestStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+                <label>Restricted handling note<textarea name="internalNote" rows={3} maxLength={2000} defaultValue={request.internalNote ?? ""} placeholder="Verification method, systems searched, action taken, exception, or denial reason"/></label>
+                <div className="leadOpsFooter"><span className="finePrint muted">DENIED requires a reason. IN_PROGRESS and COMPLETED require a prior VERIFIED save.</span><button type="submit">Save privacy case</button></div>
+              </form>
+            </article>;
+          })}</div>}
+        </div>
+
+        <div className="section">
           <div className="kicker">Instructor operations</div><h2>Assign students to CFIs</h2>
           <form className="card opsForm" action={assignStudentToCfi}>
             <div className="formGrid">
@@ -122,7 +165,7 @@ export default async function AdminDashboard() {
           {checkrideLeadRows.length === 0 ? <div className="card"><p className="muted">No Checkride Accelerator applications yet.</p></div> : <div className="leadOpsGrid">{checkrideLeadRows.map((lead) => {
             const terminal = terminalLeadStatuses.has(lead.status);
             const overdue = Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now && !terminal);
-            const unscheduled = !lead.nextFollowUpAt && !terminal;
+            const unscheduled = lead.contactConsent && !lead.nextFollowUpAt && !terminal;
             return <article className={`card leadOpsCard ${overdue ? "overdueLead" : ""}`} key={lead.id}>
               <div className="leadOpsHeader">
                 <div><span className="badge">{lead.status}</span>{overdue ? <span className="badge danger">FOLLOW-UP OVERDUE</span> : null}{unscheduled ? <span className="badge danger">NEXT ACTION MISSING</span> : null}<h3>{lead.firstName} {lead.lastName}</h3></div>

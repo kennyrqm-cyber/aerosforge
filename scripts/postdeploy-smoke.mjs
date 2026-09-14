@@ -87,7 +87,11 @@ try {
   }
 
   const privacy = await request("/privacy");
+  const privacyHtml = await privacy.text();
   if (privacy.status !== 200) failures.push(`/privacy returned ${privacy.status}, expected 200`);
+  if (process.env.EXPECT_PRIVACY_REQUESTS_DISABLED === "true" && !privacyHtml.includes("Privacy request intake is not open yet")) {
+    failures.push(`/privacy did not fail closed while privacy request intake was disabled`);
+  }
 
   const signup = await request("/sign-up");
   if (signup.status !== 200) failures.push(`/sign-up returned ${signup.status}, expected 200`);

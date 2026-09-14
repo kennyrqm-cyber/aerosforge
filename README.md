@@ -14,6 +14,8 @@ Release-candidate foundation for an aviation education and operations platform.
 - Focused Helicopter Checkride Accelerator offer and consented qualification pipeline
 - Admin-owned checkride lead status workflow with acquisition labels, duplicate suppression, and audit history
 - Founder revenue control center with follow-up dates, internal notes, stage timestamps, overdue signals, and funnel metrics
+- Fail-closed privacy-request intake with a monitored-contact dependency, duplicate suppression, response targets, and audit history
+- Admin privacy case queue that blocks processing/completion until identity verification is recorded
 - Email verification and password recovery integration prepared for Resend
 - Password-reset session revocation and database-backed auth rate limiting
 - Health, role-boundary, content-workflow, recovery-gate, schema, and security checks
@@ -27,6 +29,8 @@ All public capabilities remain closed unless their exact flags and dependencies 
 - `AUTH_EMAIL_DELIVERY_ENABLED` requires both `RESEND_API_KEY` and `AUTH_EMAIL_FROM`.
 - `WINCHESTER_LEADS_ENABLED` controls lead submission.
 - `CHECKRIDE_LEADS_ENABLED` controls Checkride Accelerator applications.
+- `PRIVACY_REQUESTS_ENABLED` requires a valid `PRIVACY_CONTACT_EMAIL`; the case workflow remains unavailable without both.
+- `PRIVACY_REQUEST_RESPONSE_DAYS` sets an operational target only and does not determine applicable legal obligations.
 - `PUBLIC_INDEXING_ENABLED` controls search-engine indexing.
 - CI test identities require GitHub Actions plus an explicit E2E flag and password.
 
@@ -38,7 +42,7 @@ AEROSFORGE does not issue FAA certificates or WINGS credit and does not replace 
 
 - Verify the sending domain and exercise real email verification and password recovery end to end.
 - Establish identity-proofed CFI onboarding and role-elevation procedures.
-- Complete aviation/legal review, privacy terms, incident response, and data-retention rules.
+- Obtain qualified review of the privacy notice and operations runbook; approve retention, erasure, backup, appeal, and incident-response procedures.
 - Prove Neon backup restoration and document recovery objectives.
 - Add production monitoring, alerting, and an on-call owner.
 - Complete accessibility and supported-device/browser acceptance testing.

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AssignmentStatus, ContentStatus, LeadStatus, ProgressStatus, ReviewDecision, Role } from "@/generated/prisma/client";
+import { AssignmentStatus, ContentStatus, LeadStatus, PrivacyRequestStatus, PrivacyRequestType, ProgressStatus, ReviewDecision, Role } from "@/generated/prisma/client";
 import {
   publishLessonWorkflow,
   publishScenarioWorkflow,
@@ -13,6 +13,11 @@ import { createCheckrideLead, updateCheckrideLeadStatusWorkflow } from "@/lib/ch
 import { db } from "@/lib/db";
 import { getAppSession, requireRole } from "@/lib/session";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
+import {
+  createPrivacyRequest,
+  isPrivacyRequestIntakeConfigured,
+  updatePrivacyRequestStatusWorkflow
+} from "@/lib/privacy-requests";
 
 function requiredText(value: FormDataEntryValue | string | null | undefined, field: string, max = 160) {
   const normalized = String(value ?? "").trim();
@@ -242,6 +247,46 @@ export async function submitCheckrideLead(formData: FormData) {
     privacyVersion: PRIVACY_NOTICE_VERSION
   });
   redirect("/checkride?submitted=1");
+}
+
+export async function submitPrivacyRequest(formData: FormData) {
+  if (!isPrivacyRequestIntakeConfigured()) throw new Error("Privacy request intake is not open yet.");
+  if (optionalText(formData.get("website"), 200)) redirect("/privacy?submitted=1");
+  if (formData.get("acknowledgement") !== "yes") {
+    throw new Error("Identity-verification acknowledgement is required.");
+  }
+
+  const requestTypeText = requiredText(formData.get("requestType"), "Request type", 40).toUpperCase();
+  if (!Object.values(PrivacyRequestType).includes(requestTypeText as PrivacyRequestType)) {
+    throw new Error("Invalid privacy request type.");
+  }
+  const session = await getAppSession();
+  await createPrivacyRequest({
+    userId: session?.user.id,
+    requestType: requestTypeText as PrivacyRequestType,
+    firstName: requiredText(formData.get("firstName"), "First name", 80),
+    lastName: requiredText(formData.get("lastName"), "Last name", 80),
+    email: normalizedEmail(formData.get("email")),
+    details: optionalText(formData.get("details"), 2000),
+    privacyVersion: PRIVACY_NOTICE_VERSION
+  });
+  redirect("/privacy?submitted=1");
+}
+
+export async function updatePrivacyRequestStatus(requestId: string, formData: FormData) {
+  const session = await requireRole(Role.ADMIN);
+  const safeRequestId = requiredText(requestId, "Privacy request", 128);
+  const statusText = requiredText(formData.get("status"), "Privacy request status", 40).toUpperCase();
+  if (!Object.values(PrivacyRequestStatus).includes(statusText as PrivacyRequestStatus)) {
+    throw new Error("Invalid privacy request status.");
+  }
+  await updatePrivacyRequestStatusWorkflow({
+    actor: session.user,
+    requestId: safeRequestId,
+    status: statusText as PrivacyRequestStatus,
+    internalNote: optionalText(formData.get("internalNote"), 2000) ?? null
+  });
+  revalidatePath("/dashboard/admin");
 }
 
 export async function reviewLesson(lessonId: string, formData: FormData) {
