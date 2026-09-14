@@ -1,0 +1,38 @@
+name: AeroComm Lockfile Bootstrap
+
+on:
+  push:
+    branches:
+      - feature/aerocomm-master-v104-preview
+    paths:
+      - package.json
+      - .github/workflows/aerocomm-lockfile-bootstrap.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm npm registry connectivity
+        run: npm ping
+      - name: Generate reproducible lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit lockfile to isolated preview branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json already current"
+            exit 0
+          fi
+          git commit -m "chore(aerocomm): generate v1.0.4 package-lock"
+          git push
