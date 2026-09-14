@@ -1,4 +1,4 @@
-name: AeroComm RC Bootstrap
+name: AeroComm Lockfile Refresh
 
 on:
   push:
@@ -6,8 +6,6 @@ on:
       - feature/aerocomm-master-v104-preview
     paths:
       - package.json
-      - package-lock.json
-      - .aerocomm-bootstrap/part00.b64
       - .github/workflows/aerocomm-lockfile-bootstrap.yml
   workflow_dispatch:
 
@@ -15,40 +13,24 @@ permissions:
   contents: write
 
 jobs:
-  bootstrap:
+  lockfile:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Confirm npm registry connectivity
-        run: npm ping
-      - name: Ensure reproducible lockfile
+      - name: Refresh reproducible lockfile
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-      - name: Decode and verify exact v1.0.4 RC
-        run: |
-          base64 -d .aerocomm-bootstrap/part00.b64 > /tmp/aerocomm-v1.0.4.zip
-          echo "5331d30f837cbf52d2d006fe1c6a7df0ce3f10d6f4aa54f77edd36c41b09d2ac  /tmp/aerocomm-v1.0.4.zip" | sha256sum -c -
-          rm -rf /tmp/aerocomm-src
-          mkdir -p /tmp/aerocomm-src
-          unzip -q /tmp/aerocomm-v1.0.4.zip -d /tmp/aerocomm-src
-      - name: Materialize RC source at repository root
-        run: |
-          SRC=/tmp/aerocomm-src/aerocomm-master-mvp-v1.0.4
-          rm -rf app components lib supabase scripts tests docs
-          cp -a "$SRC/app" "$SRC/components" "$SRC/lib" "$SRC/supabase" "$SRC/scripts" "$SRC/tests" "$SRC/docs" .
-          cp "$SRC/middleware.ts" "$SRC/next-env.d.ts" "$SRC/next.config.mjs" "$SRC/package.json" "$SRC/tsconfig.json" "$SRC/tsconfig.core.json" "$SRC/tsconfig.engine-test.json" "$SRC/vercel.json" "$SRC/deployment-manifest.json" "$SRC/release-provenance.json" "$SRC/README.md" .
-          cp "$SRC/.npmrc" "$SRC/.nvmrc" "$SRC/.vercelignore" "$SRC/.env.example" .
-      - name: Commit lockfile and RC source
+      - name: Commit lockfile
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json app components lib supabase scripts tests docs middleware.ts next-env.d.ts next.config.mjs package.json tsconfig.json tsconfig.core.json tsconfig.engine-test.json vercel.json deployment-manifest.json release-provenance.json README.md .npmrc .nvmrc .vercelignore .env.example
+          git add package-lock.json
           if git diff --cached --quiet; then
-            echo "RC source already current"
+            echo "package-lock.json already current"
             exit 0
           fi
-          git commit -m "feat(aerocomm): materialize v1.0.4 RC source"
+          git commit -m "chore(aerocomm): refresh package-lock"
           git push
