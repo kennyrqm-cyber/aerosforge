@@ -90,6 +90,7 @@ model User {
   leads              WinchesterLead[]
   checkrideLeads     CheckrideLead[]
   privacyRequests    PrivacyRequest[]
+  checkrideBaselines CheckrideBaseline[]
 
   @@index([role])
 }
@@ -347,6 +348,23 @@ model PrivacyRequest {
 
   @@index([email, createdAt])
   @@index([status, dueAt])
+}
+
+model CheckrideBaseline {
+  id                String   @id @default(cuid())
+  userId            String
+  certificateTrack  String   @default("PRIVATE_HELICOPTER")
+  standardCode      String
+  standardEdition   String
+  instrumentVersion Int      @default(1)
+  ratings           Json
+  confidenceTotal   Int
+  focusAreas        Json
+  reflection        String?
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model FAAResource {

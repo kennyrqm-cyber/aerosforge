@@ -1,1 +1,1 @@
-export const PRIVACY_NOTICE_VERSION = "2026-09-14-privacy-ops";
+export const PRIVACY_NOTICE_VERSION = "2026-09-14-checkride-baseline";

@@ -14,6 +14,7 @@ Release-candidate foundation for an aviation education and operations platform.
 - Focused Helicopter Checkride Accelerator offer and consented qualification pipeline
 - Admin-owned checkride lead status workflow with acquisition labels, duplicate suppression, and audit history
 - Founder revenue control center with follow-up dates, internal notes, stage timestamps, overdue signals, and funnel metrics
+- Student-only FAA-S-ACS-15 confidence baseline with a self-reported focus map visible to the assigned CFI
 - Fail-closed privacy-request intake with a monitored-contact dependency, duplicate suppression, response targets, and audit history
 - Admin privacy case queue that blocks processing/completion until identity verification is recorded
 - Email verification and password recovery integration prepared for Resend
@@ -36,7 +37,7 @@ All public capabilities remain closed unless their exact flags and dependencies 
 
 ## Non-negotiable safety boundary
 
-AEROSFORGE does not issue FAA certificates or WINGS credit and does not replace a CFI, an official briefing, approved aircraft data, current regulations, or pilot-in-command judgment. Aviation training content must remain draft until independently reviewed and published through the enforced workflow.
+AEROSFORGE does not issue FAA certificates or WINGS credit and does not replace a CFI, an official briefing, approved aircraft data, current regulations, or pilot-in-command judgment. The Checkride Baseline is self-reported study planning—not an exam, endorsement, eligibility determination, readiness score, or pass prediction. Aviation training content must remain draft until independently reviewed and published through the enforced workflow.
 
 ## Remaining production blockers
 

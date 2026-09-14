@@ -148,6 +148,11 @@ try {
       if (gauntlet.status !== 200 || !gauntletHtml.includes("High Density Altitude Decision")) {
         failures.push("Published scenario did not render for the Student role.");
       }
+      const baseline = await request("/checkride/baseline", { headers });
+      const baselineHtml = await baseline.text();
+      if (baseline.status !== 200 || !baselineHtml.includes("This is not an exam or readiness score")) {
+        failures.push("Checkride self-baseline did not render for the Student role.");
+      }
     }
     await expectRoleFlow({
       email: "cfi.e2e@aerosforge.test",

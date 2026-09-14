@@ -2,7 +2,7 @@ import Link from "next/link";
 import { submitCheckrideLead } from "@/lib/actions";
 
 const practiceAreas = [
-  "Private Helicopter ACS-aligned study map",
+  "Private Helicopter ACS-area confidence baseline",
   "Rotorcraft systems and aerodynamics oral drills",
   "Weather, airspace, navigation, and regulations",
   "Scenario-based aeronautical decision-making",
@@ -30,6 +30,7 @@ export default async function CheckridePage({
         <div className="offerActions">
           <a className="button primary" href="#apply">Apply for founding access →</a>
           <a className="button" href="#program">See the program</a>
+          <Link className="button" href="/checkride/baseline">Student baseline</Link>
         </div>
         <p className="finePrint muted">No pass guarantee. No FAA certificate or WINGS credit is issued. Flight instruction, endorsements, and practical-test eligibility remain with appropriately authorized instructors and the FAA process.</p>
       </div>
@@ -39,7 +40,7 @@ export default async function CheckridePage({
         <p>Target format: 90 days of platform access plus structured group checkride-preparation sessions.</p>
         <ul className="cleanList">
           <li>CFI-reviewed material only</li>
-          <li>Readiness baseline and weak-area map</li>
+          <li>Self-reported ACS confidence baseline and focus map</li>
           <li>Oral and scenario practice</li>
           <li>Founding-member feedback channel</li>
         </ul>

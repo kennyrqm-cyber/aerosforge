@@ -110,6 +110,7 @@ async function main() {
   ]) await db.badge.upsert({ where: { key: badge.key }, update: badge, create: badge });
 
   for (const resource of [
+    { slug: "private-helicopter-acs", title: "Private Pilot—Rotorcraft Helicopter ACS", description: "Official FAA-S-ACS-15 standard used by the AEROSFORGE self-baseline.", url: "https://www.faa.gov/training_testing/testing/acs/private_helicopter_acs_15.pdf" },
     { slug: "helicopter-flying-handbook", title: "Helicopter Flying Handbook", description: "FAA helicopter knowledge foundation.", url: "https://www.faa.gov/regulations_policies/handbooks_manuals/aviation/helicopter_flying_handbook" },
     { slug: "faa-aviation-handbooks", title: "FAA Aviation Handbooks & Manuals", description: "Official FAA aviation handbook library.", url: "https://www.faa.gov/regulations_policies/handbooks_manuals/aviation" },
     { slug: "phak", title: "Pilot's Handbook of Aeronautical Knowledge", description: "Broad pilot knowledge reference.", url: "https://www.faa.gov/regulations_policies/handbooks_manuals/aviation/phak" },

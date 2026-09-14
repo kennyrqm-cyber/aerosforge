@@ -10,6 +10,7 @@ import {
   reviewScenarioWorkflow
 } from "@/lib/content-workflow";
 import { createCheckrideLead, updateCheckrideLeadStatusWorkflow } from "@/lib/checkride-leads";
+import { CHECKRIDE_BASELINE_AREAS, createCheckrideBaseline } from "@/lib/checkride-baseline";
 import { db } from "@/lib/db";
 import { getAppSession, requireRole } from "@/lib/session";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
@@ -58,6 +59,22 @@ async function awardLessonBadges(userId: string) {
       create: { userId, badgeId: badge.id }
     });
   }
+}
+
+export async function submitCheckrideBaseline(formData: FormData) {
+  const session = await requireRole(Role.STUDENT);
+  const ratings = Object.fromEntries(
+    CHECKRIDE_BASELINE_AREAS.map((area) => [area.key, formData.get(`area_${area.key}`)])
+  );
+  await createCheckrideBaseline({
+    actor: session.user,
+    ratings,
+    reflection: optionalText(formData.get("reflection"), 1200)
+  });
+  revalidatePath("/checkride/baseline");
+  revalidatePath("/dashboard/student");
+  revalidatePath("/dashboard/cfi");
+  redirect("/checkride/baseline?submitted=1");
 }
 
 export async function completeLesson(lessonId: string) {
