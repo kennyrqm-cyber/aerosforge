@@ -25,6 +25,7 @@
     "test:content-workflow": "tsx scripts/content-workflow-integration.ts",
     "test:checkride-leads": "tsx scripts/checkride-lead-integration.ts",
     "test:checkride-baseline": "tsx scripts/checkride-baseline-integration.ts",
+    "test:checkride-payments": "tsx scripts/checkride-payment-integration.ts",
     "test:privacy-requests": "tsx scripts/privacy-request-integration.ts",
     "preflight": "npm run security:static && npm run schema:static && npm run release:gates",
     "role:set": "tsx scripts/set-user-role.ts",
@@ -43,7 +44,8 @@
     "pg": "^8.16.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "resend": "6.28.0"
+    "resend": "6.28.0",
+    "stripe": "22.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.7.0",
@@ -55,6 +57,10 @@
     "prisma": "7.10.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.24.4"
   },
   "type": "module"
 }

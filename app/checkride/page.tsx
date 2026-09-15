@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { submitCheckrideLead } from "@/lib/actions";
+import { isCheckrideCheckoutConfigured } from "@/lib/stripe";
 
 const practiceAreas = [
   "Private Helicopter ACS-area confidence baseline",
@@ -17,6 +18,7 @@ export default async function CheckridePage({
 }) {
   const params = await searchParams;
   const leadCollectionEnabled = process.env.CHECKRIDE_LEADS_ENABLED === "true";
+  const paymentsConfigured = isCheckrideCheckoutConfigured();
   const source = String(params.utm_source ?? "direct").slice(0, 120);
   const campaign = String(params.utm_campaign ?? "checkride-accelerator").slice(0, 120);
 
@@ -44,7 +46,7 @@ export default async function CheckridePage({
           <li>Oral and scenario practice</li>
           <li>Founding-member feedback channel</li>
         </ul>
-        <div className="notice warningBox"><strong>No payment is collected in this release candidate.</strong> Price and schedule remain subject to final approval.</div>
+        <div className={`notice ${paymentsConfigured ? "successBox" : "warningBox"}`}><strong>No payment is collected from this public page.</strong> {paymentsConfigured ? "Only qualified applicants receive an Admin-created, amount-locked Stripe Checkout link." : "Payments are not open yet; price and schedule remain subject to final approval."}</div>
       </aside>
     </section>
 

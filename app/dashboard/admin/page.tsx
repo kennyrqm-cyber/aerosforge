@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { AssignmentStatus, LeadStatus, PrivacyRequestStatus, Role } from "@/generated/prisma/client";
+import { AssignmentStatus, CheckridePaymentStatus, LeadStatus, PrivacyRequestStatus, Role } from "@/generated/prisma/client";
 import { SignOutButton } from "@/components/sign-out-button";
 import {
   assignStudentToCfi,
+  createCheckrideCheckoutSession,
   publishLesson,
   publishScenario,
   updateAssignmentStatus,
@@ -12,11 +13,13 @@ import {
 } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
+import { isCheckrideCheckoutConfigured } from "@/lib/stripe";
 
 const leadStatuses = Object.values(LeadStatus);
 const assignmentStatuses = Object.values(AssignmentStatus);
 const privacyRequestStatuses = Object.values(PrivacyRequestStatus);
 const terminalLeadStatuses = new Set<LeadStatus>([LeadStatus.ENROLLED, LeadStatus.CLOSED]);
+const checkoutEligibleLeadStatuses = new Set<LeadStatus>([LeadStatus.QUALIFIED, LeadStatus.DISCOVERY_SCHEDULED]);
 const terminalPrivacyStatuses: PrivacyRequestStatus[] = [PrivacyRequestStatus.COMPLETED, PrivacyRequestStatus.DENIED];
 
 function dateTimeLocalValue(value: Date | null) {
@@ -26,7 +29,8 @@ function dateTimeLocalValue(value: Date | null) {
 export default async function AdminDashboard() {
   const session = await requireRole(Role.ADMIN);
   const now = new Date();
-  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, overdueCheckrideLeadCount, unscheduledCheckrideLeadCount, privacyOpenCount, privacyOverdueCount, privacyIdentityPendingCount, privacyRequestRows, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
+  const paymentsConfigured = isCheckrideCheckoutConfigured();
+  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, paidCheckridePaymentCount, paidCheckrideRevenue, paymentReviewCount, overdueCheckrideLeadCount, unscheduledCheckrideLeadCount, privacyOpenCount, privacyOverdueCount, privacyIdentityPendingCount, privacyRequestRows, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: Role.STUDENT } }),
     db.user.count({ where: { role: Role.CFI } }),
@@ -35,6 +39,9 @@ export default async function AdminDashboard() {
     db.checkrideLead.count(),
     db.checkrideLead.count({ where: { qualifiedAt: { not: null } } }),
     db.checkrideLead.count({ where: { enrolledAt: { not: null } } }),
+    db.checkridePayment.count({ where: { status: CheckridePaymentStatus.PAID } }),
+    db.checkridePayment.aggregate({ where: { status: CheckridePaymentStatus.PAID }, _sum: { amountCents: true } }),
+    db.checkridePayment.count({ where: { status: { in: [CheckridePaymentStatus.REVIEW_REQUIRED, CheckridePaymentStatus.DISPUTED] } } }),
     db.checkrideLead.count({
       where: {
         nextFollowUpAt: { lt: now },
@@ -61,7 +68,11 @@ export default async function AdminDashboard() {
     db.gauntletScenario.findMany({ where: { status: "APPROVED" }, orderBy: [{ difficulty: "asc" }, { title: "asc" }], take: 20 }),
     db.auditEvent.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
     db.winchesterLead.findMany({ orderBy: { createdAt: "desc" }, take: 25 }),
-    db.checkrideLead.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
+    db.checkrideLead.findMany({
+      include: { payments: { orderBy: { createdAt: "desc" }, take: 1 } },
+      orderBy: { createdAt: "desc" },
+      take: 50
+    }),
     db.user.findMany({ where: { role: Role.CFI }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" }, take: 100 }),
     db.user.findMany({ where: { role: Role.STUDENT }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" }, take: 200 }),
     db.cfiStudentAssignment.findMany({
@@ -74,6 +85,7 @@ export default async function AdminDashboard() {
     })
   ]);
   const qualificationRate = checkrideApplicationCount === 0 ? 0 : Math.round((qualifiedCheckrideLeadCount / checkrideApplicationCount) * 100);
+  const paidRevenue = ((paidCheckrideRevenue._sum.amountCents ?? 0) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
   return <main>
     <div className="dashboardGrid">
@@ -153,12 +165,16 @@ export default async function AdminDashboard() {
 
         <div className="section">
           <div className="kicker">First revenue pipeline</div><h2>Checkride Accelerator applications</h2>
-          <p className="muted">These are qualified-interest records—not enrollments or payments. Contact only applicants with recorded consent.</p>
+          <p className="muted">Applications become payable only after qualification. Checkout is Stripe-hosted, created by an Admin, amount-locked to the approved $349 offer, and fulfilled only by a verified webhook.</p>
+          {!paymentsConfigured ? <div className="notice warningBox"><strong>Payments are not open yet.</strong> The Stripe restricted key, webhook secret, approved Price ID, checkout origin, and explicit payment flag must all be configured.</div> : null}
           <div className="metricRow revenueMetrics">
             <div className="metric"><strong>{checkrideApplicationCount}</strong><span className="label">Applications</span></div>
             <div className="metric"><strong>{qualifiedCheckrideLeadCount}</strong><span className="label">Qualified or beyond</span></div>
             <div className="metric"><strong>{qualificationRate}%</strong><span className="label">Application → qualified</span></div>
-            <div className="metric"><strong>{enrolledCheckrideLeadCount}</strong><span className="label">Enrolled, not paid</span></div>
+            <div className="metric"><strong>{enrolledCheckrideLeadCount}</strong><span className="label">Enrolled</span></div>
+            <div className="metric"><strong>{paidCheckridePaymentCount}</strong><span className="label">Verified payments</span></div>
+            <div className="metric"><strong>{paidRevenue}</strong><span className="label">Confirmed cash</span></div>
+            <div className={`metric ${paymentReviewCount > 0 ? "metricDanger" : ""}`}><strong>{paymentReviewCount}</strong><span className="label">Payment review</span></div>
             <div className={`metric ${overdueCheckrideLeadCount > 0 ? "metricDanger" : ""}`}><strong>{overdueCheckrideLeadCount}</strong><span className="label">Overdue follow-ups</span></div>
             <div className={`metric ${unscheduledCheckrideLeadCount > 0 ? "metricDanger" : ""}`}><strong>{unscheduledCheckrideLeadCount}</strong><span className="label">Missing next action</span></div>
           </div>
@@ -166,6 +182,9 @@ export default async function AdminDashboard() {
             const terminal = terminalLeadStatuses.has(lead.status);
             const overdue = Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now && !terminal);
             const unscheduled = lead.contactConsent && !lead.nextFollowUpAt && !terminal;
+            const latestPayment = lead.payments[0];
+            const checkoutEligible = lead.contactConsent && checkoutEligibleLeadStatuses.has(lead.status) && latestPayment?.status !== CheckridePaymentStatus.REVIEW_REQUIRED;
+            const activeCheckout = latestPayment?.status === CheckridePaymentStatus.OPEN && latestPayment.checkoutUrl && latestPayment.expiresAt && latestPayment.expiresAt > now;
             return <article className={`card leadOpsCard ${overdue ? "overdueLead" : ""}`} key={lead.id}>
               <div className="leadOpsHeader">
                 <div><span className="badge">{lead.status}</span>{overdue ? <span className="badge danger">FOLLOW-UP OVERDUE</span> : null}{unscheduled ? <span className="badge danger">NEXT ACTION MISSING</span> : null}<h3>{lead.firstName} {lead.lastName}</h3></div>
@@ -179,6 +198,10 @@ export default async function AdminDashboard() {
               </div>
               {lead.biggestChallenge ? <p className="leadChallenge"><strong>Preparation challenge:</strong> {lead.biggestChallenge}</p> : null}
               <p className="finePrint muted">Consent: {lead.contactConsent && lead.consentAt ? `YES • ${lead.consentAt.toLocaleString("en-US")}` : "NO — DO NOT CONTACT"} • Notice {lead.privacyVersion ?? "not recorded"}</p>
+              <div className="checkoutOps">
+                <div><span className="label">Payment</span><strong>{latestPayment?.status ?? "NOT CREATED"}</strong>{latestPayment ? <span>${(latestPayment.amountCents / 100).toFixed(2)} {latestPayment.currency.toUpperCase()} • {latestPayment.createdAt.toLocaleString("en-US")}</span> : <span>Qualify the applicant before creating checkout.</span>}</div>
+                {activeCheckout ? <a className="button" href={latestPayment.checkoutUrl!} target="_blank" rel="noreferrer">Open secure checkout ↗</a> : <form action={createCheckrideCheckoutSession.bind(null, lead.id)}><button type="submit" disabled={!paymentsConfigured || !checkoutEligible}>Create $349 checkout</button></form>}
+              </div>
               <form className="opsForm leadPipelineForm" action={updateCheckrideLeadStatus.bind(null, lead.id)}>
                 <div className="formGrid">
                   <label>Pipeline stage<select name="status" defaultValue={lead.status}>{leadStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>

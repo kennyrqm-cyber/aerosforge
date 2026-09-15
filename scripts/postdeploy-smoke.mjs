@@ -85,6 +85,23 @@ try {
   if (process.env.EXPECT_CHECKRIDE_LEADS_DISABLED === "true" && !checkrideHtml.includes("Applications are not open yet")) {
     failures.push(`/checkride did not fail closed while Checkride lead capture was disabled`);
   }
+  if (process.env.EXPECT_CHECKRIDE_PAYMENTS_DISABLED === "true" && !checkrideHtml.includes("Payments are not open yet")) {
+    failures.push(`/checkride did not fail closed while Checkride payments were disabled`);
+  }
+
+  const unsignedStripeWebhook = await request("/api/webhooks/stripe", { method: "POST", body: "{}" });
+  if (unsignedStripeWebhook.status !== 400) failures.push(`/api/webhooks/stripe accepted a request without a signature`);
+
+  const checkoutComplete = await request("/checkride/enrollment/complete");
+  const checkoutCompleteHtml = await checkoutComplete.text();
+  if (checkoutComplete.status !== 200 || !checkoutCompleteHtml.includes("does not treat this page or its URL as proof of payment")) {
+    failures.push(`/checkride/enrollment/complete is missing its webhook-verification boundary`);
+  }
+  const checkoutCanceled = await request("/checkride/enrollment/canceled");
+  const checkoutCanceledHtml = await checkoutCanceled.text();
+  if (checkoutCanceled.status !== 200 || !checkoutCanceledHtml.includes("NO CHARGE")) {
+    failures.push(`/checkride/enrollment/canceled did not render the no-charge state`);
+  }
 
   const privacy = await request("/privacy");
   const privacyHtml = await privacy.text();

@@ -11,6 +11,7 @@ import {
 } from "@/lib/content-workflow";
 import { createCheckrideLead, updateCheckrideLeadStatusWorkflow } from "@/lib/checkride-leads";
 import { CHECKRIDE_BASELINE_AREAS, createCheckrideBaseline } from "@/lib/checkride-baseline";
+import { createCheckrideCheckout } from "@/lib/checkride-payments";
 import { db } from "@/lib/db";
 import { getAppSession, requireRole } from "@/lib/session";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
@@ -422,6 +423,13 @@ export async function updateCheckrideLeadStatus(leadId: string, formData: FormDa
     nextFollowUpAt,
     markContacted: formData.get("markContacted") === "yes"
   });
+  revalidatePath("/dashboard/admin");
+}
+
+export async function createCheckrideCheckoutSession(leadId: string) {
+  const session = await requireRole(Role.ADMIN);
+  const safeLeadId = requiredText(leadId, "Lead", 128);
+  await createCheckrideCheckout({ actor: session.user, leadId: safeLeadId });
   revalidatePath("/dashboard/admin");
 }
 

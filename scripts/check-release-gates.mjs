@@ -13,6 +13,10 @@ if (!existsSync("legacy/index.html")) {
 if (existsSync("package.json")) {
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   if (pkg.engines?.node !== ">=20.19.0") failures.push("Node engine guard changed unexpectedly");
+  if (pkg.dependencies?.stripe !== "22.4.0") failures.push("Stripe SDK must remain pinned to the reviewed 22.4.0 release");
+  if (pkg.overrides?.mysql2 !== "3.24.4" || pkg.overrides?.["deepmerge-ts"] !== "8.0.2") {
+    failures.push("reviewed high-severity transitive dependency fixes are missing");
+  }
 }
 
 if (failures.length) {

@@ -54,7 +54,16 @@ const checks = [
   ["app/privacy/page.tsx", /internal follow-up notes/, "Checkride follow-up data must be disclosed"],
   ["prisma/schema.prisma", /model CheckrideLead \{[\s\S]*contactConsent\s+Boolean\s+@default\(false\)/, "Checkride consent must fail closed by default"],
   ["prisma/schema.prisma", /model PrivacyRequest \{[\s\S]*status\s+PrivacyRequestStatus\s+@default\(RECEIVED\)/, "privacy requests must start in RECEIVED"],
-  ["app/checkride/page.tsx", /No payment is collected in this release candidate/, "Checkride offer must disclose that payment is disabled"],
+  ["app/checkride/page.tsx", /No payment is collected from this public page/, "public Checkride page must never collect payment"],
+  [".env.example", /CHECKRIDE_PAYMENTS_ENABLED="false"/, "Checkride payments must default off"],
+  ["lib/stripe.ts", /\^rk_\(test\|live\)_/, "Stripe server access must require a restricted key"],
+  ["lib/stripe.ts", /\^whsec_/, "Stripe webhook configuration must require a signing secret"],
+  ["lib/checkride-payments.ts", /actor\.role !== Role\.ADMIN/, "only Admins may create Checkride checkout"],
+  ["lib/checkride-payments.ts", /CHECKOUT_ELIGIBLE_LEAD_STATUSES\.has\(lead\.status\)/, "checkout must require lead qualification"],
+  ["lib/checkride-payments.ts", /price\.unitAmount !== CHECKRIDE_FOUNDING_OFFER\.amountCents/, "Stripe Price must match the approved amount"],
+  ["lib/checkride-payments.ts", /idempotencyKey: `checkride-payment-\$\{input\.paymentId\}`/, "Checkout Session creation must be idempotent"],
+  ["lib/checkride-payments.ts", /stripeWebhookEvent\.findUnique/, "Stripe event processing must suppress duplicates"],
+  ["app\/api\/webhooks\/stripe\/route\.ts", /constructEvent\(await request\.text\(\), signature, webhookSecret\)/, "Stripe webhooks must verify the raw signed body"],
   ["lib/actions.ts", /CFI_STUDENT_ASSIGNED/, "CFI assignments must be audited"],
   ["lib/actions.ts", /GAUNTLET_DRAFT_UPDATED/, "scenario edits must be audited"],
   ["lib/actions.ts", /status: ContentStatus\.DRAFT,[\s\S]*version: \{ increment: 1 \}/, "scenario edits must create a new draft version"],
@@ -80,6 +89,8 @@ for (const [path, pattern, message] of checks) {
   const text = readFileSync(path, "utf8");
   if (!pattern.test(text)) failures.push(`${path}: ${message}`);
 }
+const paymentSource = readFileSync("lib/checkride-payments.ts", "utf8");
+if (/payment_method_types/.test(paymentSource)) failures.push("lib/checkride-payments.ts: dynamic Stripe payment methods must remain enabled");
 if (failures.length) {
   console.error("Static security checks FAILED:\n- " + failures.join("\n- "));
   process.exit(1);

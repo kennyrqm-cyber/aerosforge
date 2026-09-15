@@ -67,6 +67,17 @@ enum PrivacyRequestStatus {
   DENIED
 }
 
+enum CheckridePaymentStatus {
+  CREATING
+  OPEN
+  PAID
+  EXPIRED
+  FAILED
+  REVIEW_REQUIRED
+  REFUNDED
+  DISPUTED
+}
+
 model User {
   id                 String                 @id @default(cuid())
   name               String
@@ -91,6 +102,7 @@ model User {
   checkrideLeads     CheckrideLead[]
   privacyRequests    PrivacyRequest[]
   checkrideBaselines CheckrideBaseline[]
+  createdPayments    CheckridePayment[]     @relation("CheckridePaymentCreator")
 
   @@index([role])
 }
@@ -294,7 +306,7 @@ model WinchesterLead {
 }
 
 model CheckrideLead {
-  id               String     @id @default(cuid())
+  id               String             @id @default(cuid())
   userId           String?
   firstName        String
   lastName         String
@@ -308,24 +320,62 @@ model CheckrideLead {
   preferredFormat  String?
   source           String?
   campaign         String?
-  contactConsent   Boolean    @default(false)
+  contactConsent   Boolean            @default(false)
   consentAt        DateTime?
   privacyVersion   String?
-  status           LeadStatus @default(NEW)
+  status           LeadStatus         @default(NEW)
   internalNote     String?
   nextFollowUpAt   DateTime?
   lastContactedAt  DateTime?
   qualifiedAt      DateTime?
   enrolledAt       DateTime?
   closedAt         DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  user             User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  user             User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payments         CheckridePayment[]
 
   @@index([email])
   @@index([status, createdAt])
   @@index([nextFollowUpAt, status])
   @@index([ratingGoal, createdAt])
+}
+
+model CheckridePayment {
+  id                      String                 @id @default(cuid())
+  leadId                  String
+  createdById             String
+  offerCode               String                 @default("PRIVATE_HELICOPTER_FOUNDING_2026")
+  offerVersion            Int                    @default(1)
+  amountCents             Int                    @default(34900)
+  currency                String                 @default("usd")
+  status                  CheckridePaymentStatus @default(CREATING)
+  stripeCheckoutSessionId String?                @unique
+  stripePaymentIntentId   String?                @unique
+  stripeCustomerId        String?
+  checkoutUrl             String?
+  expiresAt               DateTime?
+  paidAt                  DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  lead                    CheckrideLead          @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  createdBy               User                   @relation("CheckridePaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  webhookEvents           StripeWebhookEvent[]
+
+  @@index([leadId, createdAt])
+  @@index([status, createdAt])
+}
+
+model StripeWebhookEvent {
+  id          String            @id
+  type        String
+  paymentId   String?
+  processedAt DateTime          @default(now())
+  createdAt   DateTime          @default(now())
+  payment     CheckridePayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId, processedAt])
+  @@index([type, processedAt])
 }
 
 model PrivacyRequest {
