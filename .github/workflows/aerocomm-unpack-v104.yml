@@ -1,0 +1,43 @@
+name: AeroComm v1.0.4 RC Unpack and Verify
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/aerocomm-master-v104-preview]
+    paths: ['.github/workflows/aerocomm-unpack-v104.yml']
+permissions:
+  contents: write
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/aerocomm-master-v104-preview
+      - name: Restore exact RC archive
+        shell: bash
+        run: |
+          base64 -d .aerocomm-bootstrap/part00.b64 > /tmp/aerocomm.zip
+          echo '5331d30f837cbf52d2d006fe1c6a7df0ce3f10d6f4aa54f77edd36c41b09d2ac  /tmp/aerocomm.zip' | sha256sum -c -
+          rm -rf /tmp/aerocomm-src
+          mkdir -p /tmp/aerocomm-src
+          unzip -q /tmp/aerocomm.zip -d /tmp/aerocomm-src
+          SRC=$(find /tmp/aerocomm-src -mindepth 1 -maxdepth 1 -type d | head -1)
+          test -f "$SRC/package.json"
+          cp -a "$SRC"/. ./
+      - name: Preserve generated lockfile and install
+        run: npm ci
+      - name: Run release verification
+        run: npm test
+      - name: TypeScript gate
+        run: npx tsc --noEmit
+      - name: Next.js production build
+        run: npm run build
+      - name: Commit verified RC source
+        shell: bash
+        run: |
+          rm -rf .aerocomm-bootstrap
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(aerocomm): unpack verified v1.0.4 RC source' || exit 0
+          git push origin HEAD:feature/aerocomm-master-v104-preview
