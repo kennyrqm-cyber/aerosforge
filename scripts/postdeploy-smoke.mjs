@@ -81,7 +81,7 @@ try {
   const checkrideHtml = await checkride.text();
   if (checkride.status !== 200) failures.push(`/checkride returned ${checkride.status}, expected 200`);
   if (!checkrideHtml.includes("CHECKRIDE ACCELERATOR")) failures.push(`/checkride is missing the primary offer`);
-  if (!checkrideHtml.includes("No payment is collected in this release candidate")) failures.push(`/checkride is missing the payment safety disclosure`);
+  if (!checkrideHtml.includes("No payment is collected from this public page")) failures.push(`/checkride is missing the payment safety disclosure`);
   if (process.env.EXPECT_CHECKRIDE_LEADS_DISABLED === "true" && !checkrideHtml.includes("Applications are not open yet")) {
     failures.push(`/checkride did not fail closed while Checkride lead capture was disabled`);
   }
