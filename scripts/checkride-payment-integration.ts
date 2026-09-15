@@ -1,6 +1,6 @@
 import "dotenv/config";
 import type Stripe from "stripe";
-import { LeadStatus, Role } from "../generated/prisma/client";
+import { CheckrideEnrollmentStatus, CheckridePaymentStatus, LeadStatus, Role } from "../generated/prisma/client";
 import {
   CHECKRIDE_FOUNDING_OFFER,
   createCheckrideCheckout,
@@ -104,9 +104,10 @@ async function main() {
   } as unknown as Stripe.Event;
   const processed = await processStripeWebhook(event);
   const repeated = await processStripeWebhook(event);
-  const [storedPayment, storedLead, eventCount, auditCount] = await Promise.all([
+  const [storedPayment, storedLead, storedEnrollment, eventCount, auditCount] = await Promise.all([
     db.checkridePayment.findUniqueOrThrow({ where: { id: first.payment.id } }),
     db.checkrideLead.findUniqueOrThrow({ where: { id: lead.id } }),
+    db.checkrideEnrollment.findUniqueOrThrow({ where: { paymentId: first.payment.id } }),
     db.stripeWebhookEvent.count({ where: { id: event.id } }),
     db.auditEvent.count({ where: { action: "CHECKRIDE_PAYMENT_CONFIRMED", entityId: first.payment.id } })
   ]);
@@ -114,11 +115,70 @@ async function main() {
     !processed.processed || repeated.processed ||
     storedPayment.status !== "PAID" || !storedPayment.paidAt ||
     storedLead.status !== LeadStatus.ENROLLED || !storedLead.enrolledAt ||
+    storedEnrollment.status !== CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING || !storedEnrollment.nextActionAt ||
     eventCount !== 1 || auditCount !== 1
   ) {
     throw new Error("Signed-event fulfillment, enrollment, or webhook idempotency failed.");
   }
-  console.log("Admin-only qualified checkout → amount lock → hosted URL → signed event → paid enrollment → idempotency passed.");
+
+  const refundEvent = {
+    id: `evt_refund_${first.payment.id}`,
+    type: "charge.refunded",
+    data: { object: { payment_intent: storedPayment.stripePaymentIntentId, amount: 34_900, amount_refunded: 34_900 } }
+  } as unknown as Stripe.Event;
+  await processStripeWebhook(refundEvent);
+  await processStripeWebhook(refundEvent);
+  const [refundedPayment, refundedEnrollment, refundEventCount] = await Promise.all([
+    db.checkridePayment.findUniqueOrThrow({ where: { id: first.payment.id } }),
+    db.checkrideEnrollment.findUniqueOrThrow({ where: { paymentId: first.payment.id } }),
+    db.stripeWebhookEvent.count({ where: { id: refundEvent.id } })
+  ]);
+  if (refundedPayment.status !== CheckridePaymentStatus.REFUNDED || refundedEnrollment.status !== CheckrideEnrollmentStatus.REFUNDED || refundEventCount !== 1) {
+    throw new Error("Refund did not stop delivery idempotently.");
+  }
+
+  const disputedLead = await db.checkrideLead.create({
+    data: {
+      firstName: "Dispute",
+      lastName: "Test",
+      email: `dispute-${Date.now()}@aerosforge.test`,
+      certificateLevel: "Student pilot",
+      ratingGoal: "Private Helicopter",
+      contactConsent: true,
+      consentAt: new Date(),
+      privacyVersion: "integration-test",
+      status: LeadStatus.ENROLLED,
+      enrolledAt: new Date()
+    }
+  });
+  const disputedPayment = await db.checkridePayment.create({
+    data: {
+      leadId: disputedLead.id,
+      createdById: admin.id,
+      status: CheckridePaymentStatus.PAID,
+      stripePaymentIntentId: `pi_dispute_${disputedLead.id}`,
+      paidAt: new Date()
+    }
+  });
+  await db.checkrideEnrollment.create({
+    data: { leadId: disputedLead.id, paymentId: disputedPayment.id, status: CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING, nextActionAt: new Date(Date.now() + 86_400_000) }
+  });
+  const disputeEvent = {
+    id: `evt_dispute_${disputedPayment.id}`,
+    type: "charge.dispute.created",
+    data: { object: { payment_intent: disputedPayment.stripePaymentIntentId } }
+  } as unknown as Stripe.Event;
+  await processStripeWebhook(disputeEvent);
+  await processStripeWebhook(disputeEvent);
+  const [paymentUnderDispute, enrollmentUnderDispute, disputeEventCount] = await Promise.all([
+    db.checkridePayment.findUniqueOrThrow({ where: { id: disputedPayment.id } }),
+    db.checkrideEnrollment.findUniqueOrThrow({ where: { paymentId: disputedPayment.id } }),
+    db.stripeWebhookEvent.count({ where: { id: disputeEvent.id } })
+  ]);
+  if (paymentUnderDispute.status !== CheckridePaymentStatus.DISPUTED || enrollmentUnderDispute.status !== CheckrideEnrollmentStatus.DISPUTED || disputeEventCount !== 1) {
+    throw new Error("Dispute did not stop delivery idempotently.");
+  }
+  console.log("Qualified checkout → amount lock → signed payment → enrollment → refund/dispute lockout → idempotency passed.");
 }
 
 main().then(() => db.$disconnect()).catch(async (error) => {

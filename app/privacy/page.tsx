@@ -38,10 +38,11 @@ export default async function PrivacyPage({
         <p>The Winchester interest pathway may store your name, email, optional phone number, experience level, desired start timing, message, contact consent, consent time, and the privacy-notice version shown when you submitted.</p>
         <p>The Checkride Accelerator application may store your name, email, optional phone number, current certificate level, rating goal, training aircraft, target checkride timing, preparation challenge, preferred format, campaign/source labels, contact consent, consent time, and the privacy-notice version shown when you submitted. Authorized administrators may also record internal follow-up notes, pipeline status, next-action dates, and contact, qualification, enrollment, or closure timestamps.</p>
         <p>For qualified applicants who receive a secure checkout invitation, AEROSFORGE may store the offer version, amount, currency, Stripe Checkout Session identifier, payment status, limited Stripe customer/payment identifiers, timestamps, and verified webhook-event identifiers. Card and bank credentials are collected by Stripe and are not stored by AEROSFORGE.</p>
+        <p>After verified payment, AEROSFORGE may store a cohort assignment, service-delivery status, matched Student account, next-action date, onboarding/start/completion timestamps, and restricted internal delivery notes. Refund, dispute, and payment-review status may pause or end delivery.</p>
         <p>A privacy request may store your name, email, request type, optional details, request status, identity-verification time, response target, resolution time, and restricted internal handling notes.</p>
 
         <h2>Why it is used</h2>
-        <p>We use this information to operate accounts, protect the service, track learning progress, support instructor workflows, respond to authorized interest and privacy requests, maintain audit records, and improve the platform.</p>
+        <p>We use this information to operate accounts, protect the service, track learning progress, support instructor workflows, fulfill paid cohort services, respond to authorized interest and privacy requests, maintain audit records, and improve the platform.</p>
 
         <h2>Contact consent</h2>
         <p>Submitting a Winchester or Checkride Accelerator form requires explicit consent to be contacted about that pathway. Submission is not enrollment, does not reserve a training slot, creates no purchase obligation, and can be withdrawn. After a consent-withdrawal request is verified and completed, the workflow suppresses the matching lead contact flags and scheduled follow-up.</p>
@@ -50,13 +51,13 @@ export default async function PrivacyPage({
         <p>AEROSFORGE ONE is an educational platform. The current system is not an FAA certification system and should not be used as the official record for pilot certificates, endorsements, aircraft maintenance, flight time, or regulatory compliance.</p>
 
         <h2>Access and security</h2>
-        <p>Role-protected areas are restricted to authorized students, CFIs, and administrators. Administrative changes, content publication, instructor assignments, lead-status changes, and privacy-case changes are designed to create audit events.</p>
+        <p>Role-protected areas are restricted to authorized students, CFIs, and administrators. Administrative changes, content publication, instructor assignments, lead-status changes, cohort/enrollment operations, and privacy-case changes are designed to create audit events.</p>
 
         <h2>Retention and deletion</h2>
         <p>AEROSFORGE minimizes collection during controlled launch. A final retention schedule and reviewed erasure procedure remain production-launch requirements. A deletion request is not executed automatically: identity must first be verified, then an authorized administrator must evaluate applicable recordkeeping, security, fraud-prevention, legal, and safety exceptions before recording resolution.</p>
 
         <h2>Third parties and payments</h2>
-        <p>Production infrastructure providers may process information on behalf of AEROSFORGE. Payments are not part of this release candidate. A final notice must identify applicable production vendors and legal bases before commercial launch.</p>
+        <p>Production infrastructure providers may process information on behalf of AEROSFORGE. The release candidate contains a disabled Stripe-hosted payment workflow; payment collection remains closed until the documented production controls are approved and configured. A final notice must identify applicable production vendors and legal bases before commercial launch.</p>
 
         <h2>Privacy requests</h2>
         <p>You may request access, correction, deletion, portability, withdrawal of contact consent, or appeal a prior decision. The case system uses a {responseDays}-day initial response target as an operational safeguard. Applicable rights, exceptions, and deadlines depend on the person and jurisdiction.</p>

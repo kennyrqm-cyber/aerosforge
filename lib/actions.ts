@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AssignmentStatus, ContentStatus, LeadStatus, PrivacyRequestStatus, PrivacyRequestType, ProgressStatus, ReviewDecision, Role } from "@/generated/prisma/client";
+import { AssignmentStatus, CheckrideCohortStatus, CheckrideEnrollmentStatus, ContentStatus, LeadStatus, PrivacyRequestStatus, PrivacyRequestType, ProgressStatus, ReviewDecision, Role } from "@/generated/prisma/client";
 import {
   publishLessonWorkflow,
   publishScenarioWorkflow,
@@ -12,6 +12,11 @@ import {
 import { createCheckrideLead, updateCheckrideLeadStatusWorkflow } from "@/lib/checkride-leads";
 import { CHECKRIDE_BASELINE_AREAS, createCheckrideBaseline } from "@/lib/checkride-baseline";
 import { createCheckrideCheckout } from "@/lib/checkride-payments";
+import {
+  createCheckrideCohortWorkflow,
+  updateCheckrideCohortStatusWorkflow,
+  updateCheckrideEnrollmentWorkflow
+} from "@/lib/checkride-enrollments";
 import { db } from "@/lib/db";
 import { getAppSession, requireRole } from "@/lib/session";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
@@ -431,6 +436,57 @@ export async function createCheckrideCheckoutSession(leadId: string) {
   const safeLeadId = requiredText(leadId, "Lead", 128);
   await createCheckrideCheckout({ actor: session.user, leadId: safeLeadId });
   revalidatePath("/dashboard/admin");
+}
+
+export async function createCheckrideCohort(formData: FormData) {
+  const session = await requireRole(Role.ADMIN);
+  const startsAt = new Date(requiredText(formData.get("startsAt"), "Cohort start", 40));
+  const endsAtText = optionalText(formData.get("endsAt"), 40);
+  const endsAt = endsAtText ? new Date(endsAtText) : null;
+  const capacity = Number(requiredText(formData.get("capacity"), "Capacity", 3));
+  await createCheckrideCohortWorkflow({
+    actor: session.user,
+    code: requiredText(formData.get("code"), "Cohort code", 32),
+    name: requiredText(formData.get("name"), "Cohort name", 120),
+    startsAt,
+    endsAt,
+    capacity
+  });
+  revalidatePath("/dashboard/admin/checkride");
+}
+
+export async function updateCheckrideCohortStatus(cohortId: string, formData: FormData) {
+  const session = await requireRole(Role.ADMIN);
+  const statusText = requiredText(formData.get("status"), "Cohort status", 40).toUpperCase();
+  if (!Object.values(CheckrideCohortStatus).includes(statusText as CheckrideCohortStatus)) {
+    throw new Error("Invalid Checkride cohort status.");
+  }
+  await updateCheckrideCohortStatusWorkflow({
+    actor: session.user,
+    cohortId: requiredText(cohortId, "Cohort", 128),
+    status: statusText as CheckrideCohortStatus
+  });
+  revalidatePath("/dashboard/admin/checkride");
+}
+
+export async function updateCheckrideEnrollment(enrollmentId: string, formData: FormData) {
+  const session = await requireRole(Role.ADMIN);
+  const statusText = requiredText(formData.get("status"), "Enrollment status", 50).toUpperCase();
+  if (!Object.values(CheckrideEnrollmentStatus).includes(statusText as CheckrideEnrollmentStatus)) {
+    throw new Error("Invalid Checkride enrollment status.");
+  }
+  const nextActionText = optionalText(formData.get("nextActionAt"), 40);
+  await updateCheckrideEnrollmentWorkflow({
+    actor: session.user,
+    enrollmentId: requiredText(enrollmentId, "Enrollment", 128),
+    status: statusText as CheckrideEnrollmentStatus,
+    userId: optionalText(formData.get("userId"), 128) ?? null,
+    cohortId: optionalText(formData.get("cohortId"), 128) ?? null,
+    nextActionAt: nextActionText ? new Date(nextActionText) : null,
+    internalNote: optionalText(formData.get("internalNote"), 2000) ?? null
+  });
+  revalidatePath("/dashboard/admin/checkride");
+  revalidatePath("/dashboard/student");
 }
 
 export async function assignStudentToCfi(formData: FormData) {

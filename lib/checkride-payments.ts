@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type Stripe from "stripe";
-import { CheckridePaymentStatus, LeadStatus, Role } from "@/generated/prisma/client";
+import { CheckrideEnrollmentStatus, CheckridePaymentStatus, LeadStatus, Role } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import {
   createStripeClient,
@@ -215,11 +215,17 @@ export async function processStripeWebhook(event: Stripe.Event) {
           nextStatus = CheckridePaymentStatus.REVIEW_REQUIRED;
           action = "CHECKRIDE_PAYMENT_REVIEW_REQUIRED";
         } else if (session.payment_status === "paid" && !PAYMENT_ADVERSE_STATUSES.has(payment.status)) {
-          nextStatus = CheckridePaymentStatus.PAID;
-          action = "CHECKRIDE_PAYMENT_CONFIRMED";
-          stripePaymentIntentId = stringId(session.payment_intent) ?? undefined;
-          stripeCustomerId = stringId(session.customer) ?? undefined;
-          paidAt = new Date();
+          const existingEnrollment = await tx.checkrideEnrollment.findUnique({ where: { leadId: payment.leadId } });
+          if (existingEnrollment && existingEnrollment.paymentId !== payment.id) {
+            nextStatus = CheckridePaymentStatus.REVIEW_REQUIRED;
+            action = "CHECKRIDE_PAYMENT_REVIEW_REQUIRED";
+          } else {
+            nextStatus = CheckridePaymentStatus.PAID;
+            action = "CHECKRIDE_PAYMENT_CONFIRMED";
+            stripePaymentIntentId = stringId(session.payment_intent) ?? undefined;
+            stripeCustomerId = stringId(session.customer) ?? undefined;
+            paidAt = new Date();
+          }
         }
       }
     } else if (event.type === "checkout.session.expired") {
@@ -259,6 +265,31 @@ export async function processStripeWebhook(event: Stripe.Event) {
         await tx.checkrideLead.updateMany({
           where: { id: payment.leadId, status: { not: LeadStatus.CLOSED } },
           data: { status: LeadStatus.ENROLLED, enrolledAt: paidAt, nextFollowUpAt: null }
+        });
+        await tx.checkrideEnrollment.upsert({
+          where: { leadId: payment.leadId },
+          update: {},
+          create: {
+            leadId: payment.leadId,
+            paymentId: payment.id,
+            status: CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING,
+            nextActionAt: new Date((paidAt ?? new Date()).getTime() + 48 * 60 * 60 * 1000)
+          }
+        });
+      } else if (nextStatus === CheckridePaymentStatus.REVIEW_REQUIRED) {
+        await tx.checkrideEnrollment.updateMany({
+          where: { paymentId: payment.id },
+          data: { status: CheckrideEnrollmentStatus.REVIEW_REQUIRED, nextActionAt: null }
+        });
+      } else if (nextStatus === CheckridePaymentStatus.REFUNDED) {
+        await tx.checkrideEnrollment.updateMany({
+          where: { paymentId: payment.id },
+          data: { status: CheckrideEnrollmentStatus.REFUNDED, nextActionAt: null }
+        });
+      } else if (nextStatus === CheckridePaymentStatus.DISPUTED) {
+        await tx.checkrideEnrollment.updateMany({
+          where: { paymentId: payment.id },
+          data: { status: CheckrideEnrollmentStatus.DISPUTED, nextActionAt: null }
         });
       }
     }

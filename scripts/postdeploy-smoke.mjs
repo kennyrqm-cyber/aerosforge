@@ -178,13 +178,20 @@ try {
       marker: "CFI dashboard",
       forbiddenPath: "/dashboard/admin"
     });
-    await expectRoleFlow({
+    const adminCookie = await expectRoleFlow({
       email: "admin.e2e@aerosforge.test",
       password,
       dashboardPath: "/dashboard/admin",
       marker: "Owner dashboard",
       forbiddenPath: "/dashboard/student"
     });
+    if (adminCookie) {
+      const checkrideOps = await request("/dashboard/admin/checkride", { headers: { cookie: adminCookie } });
+      const checkrideOpsHtml = await checkrideOps.text();
+      if (checkrideOps.status !== 200 || !checkrideOpsHtml.includes("Checkride cohort operations")) {
+        failures.push("Admin could not render paid-customer cohort operations.");
+      }
+    }
   }
 } catch (error) {
   failures.push(error instanceof Error ? error.message : String(error));

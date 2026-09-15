@@ -16,6 +16,7 @@ Release-candidate foundation for an aviation education and operations platform.
 - Founder revenue control center with follow-up dates, internal notes, stage timestamps, overdue signals, and funnel metrics
 - Student-only FAA-S-ACS-15 confidence baseline with a self-reported focus map visible to the assigned CFI
 - Admin-only, amount-locked Stripe Checkout for qualified Checkride leads with signed, idempotent webhook fulfillment
+- Payment-triggered Checkride delivery records with Admin-owned cohorts, capacity controls, account matching, next-action accountability, and refund/dispute lockout
 - Fail-closed privacy-request intake with a monitored-contact dependency, duplicate suppression, response targets, and audit history
 - Admin privacy case queue that blocks processing/completion until identity verification is recorded
 - Email verification and password recovery integration prepared for Resend
@@ -45,6 +46,7 @@ AEROSFORGE does not issue FAA certificates or WINGS credit and does not replace 
 
 - Verify the sending domain and exercise real email verification and password recovery end to end.
 - Provision a least-privilege Stripe restricted key, approved $349 one-time Price, and signed webhook; pass sandbox payment, expiration, refund, and dispute drills before enabling payments.
+- Conduct an end-to-end founding-cohort delivery rehearsal with a real schedule, named delivery owner, support path, refund procedure, and independently approved training content.
 - Establish identity-proofed CFI onboarding and role-elevation procedures.
 - Obtain qualified review of the privacy notice and operations runbook; approve retention, erasure, backup, appeal, and incident-response procedures.
 - Prove Neon backup restoration and document recovery objectives.

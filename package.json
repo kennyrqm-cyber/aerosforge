@@ -26,6 +26,7 @@
     "test:checkride-leads": "tsx scripts/checkride-lead-integration.ts",
     "test:checkride-baseline": "tsx scripts/checkride-baseline-integration.ts",
     "test:checkride-payments": "tsx scripts/checkride-payment-integration.ts",
+    "test:checkride-enrollments": "tsx scripts/checkride-enrollment-integration.ts",
     "test:privacy-requests": "tsx scripts/privacy-request-integration.ts",
     "preflight": "npm run security:static && npm run schema:static && npm run release:gates",
     "role:set": "tsx scripts/set-user-role.ts",

@@ -94,6 +94,7 @@ export default async function AdminDashboard() {
         <h3>{session.user.name ?? session.user.email}</h3>
         <p className="muted">AEROSFORGE ONE command</p>
         <div className="stack">
+          <Link className="button primary" href="/dashboard/admin/checkride">Checkride cohort operations</Link>
           <Link className="button" href="/dashboard/cfi">Open CFI review queue</Link>
           <Link className="button" href="/checkride">Checkride offer</Link>
           <Link className="button" href="/winchester">Winchester pathway</Link>

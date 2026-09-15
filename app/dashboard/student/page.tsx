@@ -1,13 +1,19 @@
 import Link from "next/link";
-import { ProgressStatus, Role } from "@/generated/prisma/client";
+import { CheckrideEnrollmentStatus, ProgressStatus, Role } from "@/generated/prisma/client";
 import { SignOutButton } from "@/components/sign-out-button";
 import { baselineAverage, parseFocusAreas } from "@/lib/checkride-baseline";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 
+const blockedCheckrideStatuses = new Set<CheckrideEnrollmentStatus>([
+  CheckrideEnrollmentStatus.REVIEW_REQUIRED,
+  CheckrideEnrollmentStatus.REFUNDED,
+  CheckrideEnrollmentStatus.DISPUTED
+]);
+
 export default async function StudentDashboard() {
   const session = await requireRole(Role.STUDENT);
-  const [progress, badgeCount, attempts, lessonCount, latestBaseline] = await Promise.all([
+  const [progress, badgeCount, attempts, lessonCount, latestBaseline, checkrideEnrollment] = await Promise.all([
     db.lessonProgress.findMany({
       where: { userId: session.user.id },
       include: { lesson: true },
@@ -16,7 +22,12 @@ export default async function StudentDashboard() {
     db.userBadge.count({ where: { userId: session.user.id } }),
     db.gauntletAttempt.findMany({ where: { userId: session.user.id }, select: { xpAwarded: true } }),
     db.lesson.count({ where: { status: "PUBLISHED" } }),
-    db.checkrideBaseline.findFirst({ where: { userId: session.user.id }, orderBy: { createdAt: "desc" } })
+    db.checkrideBaseline.findFirst({ where: { userId: session.user.id }, orderBy: { createdAt: "desc" } }),
+    db.checkrideEnrollment.findFirst({
+      where: { userId: session.user.id },
+      include: { cohort: true, payment: { select: { status: true } } },
+      orderBy: { createdAt: "desc" }
+    })
   ]);
 
   const completed = progress.filter((item) => item.status === ProgressStatus.COMPLETED);
@@ -44,6 +55,14 @@ export default async function StudentDashboard() {
           <div className="metric"><strong>{attempts.length}</strong><span className="label">Gauntlet attempts</span></div>
         </div>
         <div className="grid2">
+          {checkrideEnrollment ? <div className={`card ${blockedCheckrideStatuses.has(checkrideEnrollment.status) ? "metricDanger" : ""}`}>
+            <span className="badge">CHECKRIDE COHORT</span>
+            <h3>Founding-member delivery</h3>
+            <p><strong>{checkrideEnrollment.status.replaceAll("_", " ")}</strong></p>
+            <p className="muted">{checkrideEnrollment.cohort ? `${checkrideEnrollment.cohort.name} • ${checkrideEnrollment.cohort.startsAt.toLocaleString("en-US", { timeZone: "UTC" })} UTC` : "Your cohort has not been assigned yet."}</p>
+            {checkrideEnrollment.nextActionAt ? <p className="finePrint">Next operational action: {checkrideEnrollment.nextActionAt.toLocaleString("en-US", { timeZone: "UTC" })} UTC</p> : null}
+            {checkrideEnrollment.payment.status !== "PAID" ? <div className="notice warningBox">Delivery is paused while the payment status is reviewed.</div> : null}
+          </div> : null}
           <div className="card"><h3>Checkride Baseline</h3>{latestBaseline ? <><p><strong>{baselineAverage(latestBaseline.confidenceTotal).toFixed(1)} / 5</strong> self-reported average</p><p className="muted">Focus: {baselineFocusAreas.map((area) => area.title).join(" • ")}</p></> : <p className="muted">Create an ACS-area confidence map to guide your next CFI conversation.</p>}<Link className="button primary" href="/checkride/baseline">{latestBaseline ? "Update baseline" : "Start baseline"}</Link></div>
           <div className="card"><h3>Academy</h3><p className="muted">{lessonCount === 0 ? "No instructor-approved lessons are published yet. Draft content remains protected from students." : `${lessonCount} published lessons are available.`}</p><Link className="button primary" href="/academy">Open Academy</Link></div>
           <div className="card"><h3>The Gauntlet</h3><p className="muted">Practice risk management and decision-making. XP is awarded only once per scenario for the first correct completion.</p><Link className="button" href="/gauntlet">Enter Gauntlet</Link></div>
