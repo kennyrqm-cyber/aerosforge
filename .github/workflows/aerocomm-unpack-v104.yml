@@ -13,10 +13,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: feature/aerocomm-master-v104-preview
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
       - name: Restore exact RC archive
         shell: bash
         run: |
-          base64 -d .aerocomm-bootstrap/part00.b64 > /tmp/aerocomm.zip
+          cat .aerocomm-bootstrap/part00.b64 \
+              .aerocomm-bootstrap/part01.b64 \
+              .aerocomm-bootstrap/part02.b64 \
+              .aerocomm-bootstrap/part03.b64 \
+              .aerocomm-bootstrap/part04.b64 \
+              .aerocomm-bootstrap/part05.b64 \
+              .aerocomm-bootstrap/part06.b64 \
+              .aerocomm-bootstrap/part07.b64 \
+            | base64 -d > /tmp/aerocomm.zip
           echo '5331d30f837cbf52d2d006fe1c6a7df0ce3f10d6f4aa54f77edd36c41b09d2ac  /tmp/aerocomm.zip' | sha256sum -c -
           rm -rf /tmp/aerocomm-src
           mkdir -p /tmp/aerocomm-src
@@ -24,12 +36,13 @@ jobs:
           SRC=$(find /tmp/aerocomm-src -mindepth 1 -maxdepth 1 -type d | head -1)
           test -f "$SRC/package.json"
           cp -a "$SRC"/. ./
-      - name: Preserve generated lockfile and install
+          test -f package-lock.json
+      - name: Install exact dependencies
         run: npm ci
       - name: Run release verification
-        run: npm test
+        run: npm run verify:release
       - name: TypeScript gate
-        run: npx tsc --noEmit
+        run: npm run typecheck
       - name: Next.js production build
         run: npm run build
       - name: Commit verified RC source
