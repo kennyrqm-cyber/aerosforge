@@ -95,6 +95,12 @@ enum CheckrideEnrollmentStatus {
   DISPUTED
 }
 
+enum LaunchGateStatus {
+  BLOCKED
+  EVIDENCE_SUBMITTED
+  APPROVED
+}
+
 model User {
   id                   String                 @id @default(cuid())
   name                 String
@@ -122,6 +128,7 @@ model User {
   createdPayments      CheckridePayment[]     @relation("CheckridePaymentCreator")
   ownedCohorts         CheckrideCohort[]      @relation("CheckrideCohortOwner")
   checkrideEnrollments CheckrideEnrollment[]
+  launchGateUpdates    LaunchGateDecision[]   @relation("LaunchGateUpdater")
 
   @@index([role])
 }
@@ -481,6 +488,22 @@ model CheckrideBaseline {
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+model LaunchGateDecision {
+  id           String           @id @default(cuid())
+  gateKey      String           @unique
+  gateVersion  Int              @default(1)
+  status       LaunchGateStatus @default(BLOCKED)
+  evidence     String?
+  reviewerName String?
+  approvedAt   DateTime?
+  updatedById  String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  updatedBy    User             @relation("LaunchGateUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([status, updatedAt])
 }
 
 model FAAResource {

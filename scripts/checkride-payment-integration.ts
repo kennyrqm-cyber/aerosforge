@@ -1,12 +1,13 @@
 import "dotenv/config";
 import type Stripe from "stripe";
-import { CheckrideEnrollmentStatus, CheckridePaymentStatus, LeadStatus, Role } from "../generated/prisma/client";
+import { CheckrideEnrollmentStatus, CheckridePaymentStatus, LaunchGateStatus, LeadStatus, Role } from "../generated/prisma/client";
 import {
   CHECKRIDE_FOUNDING_OFFER,
   createCheckrideCheckout,
   processStripeWebhook
 } from "../lib/checkride-payments";
 import { db } from "../lib/db";
+import { CHECKRIDE_LAUNCH_GATES, updateLaunchGateDecisionWorkflow } from "../lib/launch-readiness";
 
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.E2E_TEST_IDENTITIES_ENABLED !== "true") {
   throw new Error("Checkride payment integration runs only with GitHub Actions test identities.");
@@ -81,6 +82,22 @@ async function main() {
     "Only qualified Checkride leads can receive checkout."
   );
   await db.checkrideLead.update({ where: { id: lead.id }, data: { status: LeadStatus.QUALIFIED, qualifiedAt: new Date() } });
+  await updateLaunchGateDecisionWorkflow({
+    actor: { id: admin.id, role: Role.ADMIN }, gateKey: CHECKRIDE_LAUNCH_GATES[0].key,
+    status: LaunchGateStatus.BLOCKED
+  });
+  await expectRejection(
+    () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway }),
+    "Checkride checkout is blocked until every launch-readiness gate has current approval evidence."
+  );
+  for (const gate of CHECKRIDE_LAUNCH_GATES) {
+    await updateLaunchGateDecisionWorkflow({
+      actor: { id: admin.id, role: Role.ADMIN }, gateKey: gate.key,
+      status: LaunchGateStatus.APPROVED,
+      evidence: `Payment integration evidence for ${gate.key}; current definition verified.`,
+      reviewerName: `CI ${gate.authority}`
+    });
+  }
   await expectRejection(
     () => createCheckrideCheckout({
       actor: { id: admin.id, role: Role.ADMIN },
@@ -103,6 +120,49 @@ async function main() {
     () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: "missing-cohort", config, gateway }),
     "Checkout requires a future scheduled Checkride cohort with a defined delivery window."
   );
+
+  const gatedCheckout = await createCheckrideCheckout({
+    actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway
+  });
+  await updateLaunchGateDecisionWorkflow({
+    actor: { id: admin.id, role: Role.ADMIN }, gateKey: CHECKRIDE_LAUNCH_GATES[0].key,
+    status: LaunchGateStatus.BLOCKED
+  });
+  const gatedPaidEvent = {
+    id: `evt_gate_hold_${gatedCheckout.payment.id}`,
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: gatedCheckout.payment.stripeCheckoutSessionId,
+        client_reference_id: gatedCheckout.payment.id,
+        metadata: { paymentId: gatedCheckout.payment.id, leadId: lead.id, cohortId: cohort.id },
+        amount_total: CHECKRIDE_FOUNDING_OFFER.amountCents,
+        currency: CHECKRIDE_FOUNDING_OFFER.currency,
+        payment_status: "paid",
+        payment_intent: `pi_gate_hold_${gatedCheckout.payment.id}`,
+        customer: `cus_gate_hold_${gatedCheckout.payment.id}`
+      }
+    }
+  } as unknown as Stripe.Event;
+  await processStripeWebhook(gatedPaidEvent);
+  const [gatedPaidPayment, gatedEnrollment] = await Promise.all([
+    db.checkridePayment.findUniqueOrThrow({ where: { id: gatedCheckout.payment.id } }),
+    db.checkrideEnrollment.findUnique({ where: { paymentId: gatedCheckout.payment.id } })
+  ]);
+  if (gatedPaidPayment.status !== CheckridePaymentStatus.REVIEW_REQUIRED || !gatedPaidPayment.paidAt || gatedEnrollment) {
+    throw new Error("Paid event bypassed a revoked launch gate.");
+  }
+  await processStripeWebhook({
+    id: `evt_gate_hold_refund_${gatedCheckout.payment.id}`,
+    type: "charge.refunded",
+    data: { object: { payment_intent: gatedPaidPayment.stripePaymentIntentId, amount: 34_900, amount_refunded: 34_900 } }
+  } as unknown as Stripe.Event);
+  await updateLaunchGateDecisionWorkflow({
+    actor: { id: admin.id, role: Role.ADMIN }, gateKey: CHECKRIDE_LAUNCH_GATES[0].key,
+    status: LaunchGateStatus.APPROVED,
+    evidence: "Payment integration reapproval after the deliberate webhook lockout drill.",
+    reviewerName: "CI Independent CFI"
+  });
 
   const first = await createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway });
   const duplicate = await createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway });
@@ -313,7 +373,7 @@ async function main() {
   if (paymentUnderDispute.status !== CheckridePaymentStatus.DISPUTED || enrollmentUnderDispute.status !== CheckrideEnrollmentStatus.DISPUTED || disputeEventCount !== 1) {
     throw new Error("Dispute did not stop delivery idempotently.");
   }
-  console.log("Qualified checkout → reserved cohort seat → signed payment → automatic cohort enrollment → refund/dispute lockout → idempotency passed.");
+  console.log("Qualified checkout → launch-gate lockout → reserved cohort seat → signed payment → automatic cohort enrollment → refund/dispute lockout → idempotency passed.");
 }
 
 main().then(() => db.$disconnect()).catch(async (error) => {

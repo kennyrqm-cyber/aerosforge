@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AssignmentStatus, CheckrideCohortStatus, CheckrideEnrollmentStatus, CheckridePaymentStatus, LeadStatus, PrivacyRequestStatus, Role } from "@/generated/prisma/client";
+import { AssignmentStatus, CheckrideCohortStatus, CheckrideEnrollmentStatus, CheckridePaymentStatus, LaunchGateStatus, LeadStatus, PrivacyRequestStatus, Role } from "@/generated/prisma/client";
 import { SignOutButton } from "@/components/sign-out-button";
 import {
   assignStudentToCfi,
@@ -8,16 +8,19 @@ import {
   publishScenario,
   updateAssignmentStatus,
   updateCheckrideLeadStatus,
+  updateLaunchGateDecision,
   updatePrivacyRequestStatus,
   updateWinchesterLeadStatus
 } from "@/lib/actions";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import { isCheckrideCheckoutConfigured } from "@/lib/stripe";
+import { getCheckrideLaunchReadiness } from "@/lib/launch-readiness";
 
 const leadStatuses = Object.values(LeadStatus);
 const assignmentStatuses = Object.values(AssignmentStatus);
 const privacyRequestStatuses = Object.values(PrivacyRequestStatus);
+const launchGateStatuses = Object.values(LaunchGateStatus);
 const terminalLeadStatuses = new Set<LeadStatus>([LeadStatus.ENROLLED, LeadStatus.CLOSED]);
 const checkoutEligibleLeadStatuses = new Set<LeadStatus>([LeadStatus.QUALIFIED, LeadStatus.DISCOVERY_SCHEDULED]);
 const terminalPrivacyStatuses: PrivacyRequestStatus[] = [PrivacyRequestStatus.COMPLETED, PrivacyRequestStatus.DENIED];
@@ -30,7 +33,7 @@ export default async function AdminDashboard() {
   const session = await requireRole(Role.ADMIN);
   const now = new Date();
   const paymentsConfigured = isCheckrideCheckoutConfigured();
-  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, paidCheckridePaymentCount, paidCheckrideRevenue, paymentReviewCount, overdueCheckrideLeadCount, checkoutCohortRows, unscheduledCheckrideLeadCount, privacyOpenCount, privacyOverdueCount, privacyIdentityPendingCount, privacyRequestRows, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments, publishedLessonCount] = await Promise.all([
+  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, paidCheckridePaymentCount, paidCheckrideRevenue, paymentReviewCount, overdueCheckrideLeadCount, checkoutCohortRows, unscheduledCheckrideLeadCount, privacyOpenCount, privacyOverdueCount, privacyIdentityPendingCount, privacyRequestRows, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments, publishedLessonCount, launchReadiness] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: Role.STUDENT } }),
     db.user.count({ where: { role: Role.CFI } }),
@@ -103,14 +106,16 @@ export default async function AdminDashboard() {
       orderBy: { updatedAt: "desc" },
       take: 30
     }),
-    db.lesson.count({ where: { status: "PUBLISHED" } })
+    db.lesson.count({ where: { status: "PUBLISHED" } }),
+    getCheckrideLaunchReadiness()
   ]);
   const qualificationRate = checkrideApplicationCount === 0 ? 0 : Math.round((qualifiedCheckrideLeadCount / checkrideApplicationCount) * 100);
   const paidRevenue = ((paidCheckrideRevenue._sum.amountCents ?? 0) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
   const checkoutCohorts = checkoutCohortRows.flatMap((cohort) => {
     const seatsAvailable = cohort.capacity - cohort.enrollments.length - cohort.payments.length;
-    return seatsAvailable > 0 && publishedLessonCount > 0 ? [{ ...cohort, seatsAvailable }] : [];
+    return seatsAvailable > 0 && publishedLessonCount > 0 && launchReadiness.ready ? [{ ...cohort, seatsAvailable }] : [];
   });
+  const paymentsOperationallyReady = paymentsConfigured && launchReadiness.ready;
 
   return <main>
     <div className="dashboardGrid">
@@ -139,6 +144,29 @@ export default async function AdminDashboard() {
         <div className="grid2">
           <div className="card"><h3>Content gate</h3><p><strong>{draftCount}</strong> lessons are draft/in review.</p><p className="muted">Student pages expose PUBLISHED content only.</p></div>
           <div className="card"><h3>Independent review</h3><p>Publication requires an approval from a current CFI other than the publishing admin.</p><p className="muted">Privileged operations emit audit events.</p></div>
+        </div>
+
+        <div className="section" id="launch-readiness">
+          <div className="kicker">Revenue Stage 4</div><h2>Founding cohort launch control</h2>
+          <p className="muted">Checkout is hard-blocked in the server workflow until every current gate has approval evidence. Changing an environment flag cannot bypass this control.</p>
+          <div className="metricRow">
+            <div className="metric"><strong>{launchReadiness.approvedCount}/{launchReadiness.total}</strong><span className="label">Approved gates</span></div>
+            <div className={`metric ${launchReadiness.ready ? "" : "metricDanger"}`}><strong>{launchReadiness.ready ? "READY" : "BLOCKED"}</strong><span className="label">Operational readiness</span></div>
+            <div className={`metric ${paymentsConfigured ? "" : "metricDanger"}`}><strong>{paymentsConfigured ? "READY" : "CLOSED"}</strong><span className="label">Stripe configuration</span></div>
+            <div className={`metric ${paymentsOperationallyReady ? "" : "metricDanger"}`}><strong>{paymentsOperationallyReady ? "SELLABLE" : "NO SALES"}</strong><span className="label">Checkout state</span></div>
+          </div>
+          {!launchReadiness.ready ? <div className="notice warningBox"><strong>Revenue remains locked.</strong> Evidence must be real, attributable, and current. Marking a gate approved without completing the work creates an audit record but does not make the underlying risk disappear.</div> : <div className="notice successBox"><strong>Operational gates approved.</strong> Checkout still requires its explicit flag, least-privilege Stripe configuration, a qualified applicant, published content, and real cohort inventory.</div>}
+          <div className="grid2 launchGateGrid">{launchReadiness.gates.map((gate) => <article className="card" key={gate.key}>
+            <div className="leadOpsHeader"><div><span className="badge">{gate.category}</span><span className={`badge ${gate.status === LaunchGateStatus.APPROVED ? "success" : gate.status === LaunchGateStatus.BLOCKED ? "danger" : ""}`}>{gate.status}</span><h3>{gate.title}</h3></div><span className="finePrint muted">v{gate.version}</span></div>
+            <p>{gate.requirement}</p>
+            <p className="finePrint muted"><strong>Accountable authority:</strong> {gate.authority}{gate.stale ? " • PRIOR APPROVAL IS STALE" : ""}</p>
+            <form className="opsForm" action={updateLaunchGateDecision.bind(null, gate.key)}>
+              <label>Status<select name="status" defaultValue={gate.status}>{launchGateStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+              <label>Reviewer or accountable role<input name="reviewerName" maxLength={160} defaultValue={gate.reviewerName ?? ""} placeholder="Name and role required for approval"/></label>
+              <label>Evidence reference<textarea name="evidence" rows={4} maxLength={2000} defaultValue={gate.evidence ?? ""} placeholder="Document/version, dated drill result, ticket, report, or controlled evidence location"/></label>
+              <div className="leadOpsFooter"><span className="finePrint muted">Updated {gate.updatedAt?.toLocaleString("en-US") ?? "never"} • Approved {gate.approvedAt?.toLocaleString("en-US") ?? "not approved"}</span><button type="submit">Save gate</button></div>
+            </form>
+          </article>)}</div>
         </div>
 
         <div className="section">
@@ -193,6 +221,7 @@ export default async function AdminDashboard() {
           <div className="kicker">First revenue pipeline</div><h2>Checkride Accelerator applications</h2>
           <p className="muted">Applications become payable only after qualification. Every Stripe-hosted Checkout Session is amount-locked to the approved $349 offer and must reserve inventory in a real future cohort before it can be created.</p>
           {!paymentsConfigured ? <div className="notice warningBox"><strong>Payments are not open yet.</strong> The Stripe restricted key, webhook secret, approved Price ID, checkout origin, and explicit payment flag must all be configured.</div> : null}
+          {!launchReadiness.ready ? <div className="notice warningBox"><strong>Launch evidence is incomplete.</strong> Checkout cannot be created until all Stage 4 gates above are approved.</div> : null}
           {checkoutCohorts.length === 0 ? <div className="notice warningBox"><strong>No seats are sellable.</strong> Checkout requires independently reviewed published content plus a future scheduled cohort with a defined end and available capacity.</div> : null}
           <div className="metricRow revenueMetrics">
             <div className="metric"><strong>{checkrideApplicationCount}</strong><span className="label">Applications</span></div>
@@ -210,8 +239,9 @@ export default async function AdminDashboard() {
             const overdue = Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now && !terminal);
             const unscheduled = lead.contactConsent && !lead.nextFollowUpAt && !terminal;
             const latestPayment = lead.payments[0];
-            const checkoutEligible = lead.contactConsent && checkoutEligibleLeadStatuses.has(lead.status) && latestPayment?.status !== CheckridePaymentStatus.REVIEW_REQUIRED && checkoutCohorts.length > 0;
-            const activeCheckout = latestPayment?.status === CheckridePaymentStatus.OPEN && latestPayment.checkoutUrl && latestPayment.expiresAt && latestPayment.expiresAt > now;
+            const checkoutEligible = lead.contactConsent && checkoutEligibleLeadStatuses.has(lead.status) && latestPayment?.status !== CheckridePaymentStatus.REVIEW_REQUIRED && checkoutCohorts.length > 0 && paymentsOperationallyReady;
+            const activeCheckoutExists = Boolean(latestPayment?.status === CheckridePaymentStatus.OPEN && latestPayment.checkoutUrl && latestPayment.expiresAt && latestPayment.expiresAt > now);
+            const activeCheckout = activeCheckoutExists && paymentsOperationallyReady;
             return <article className={`card leadOpsCard ${overdue ? "overdueLead" : ""}`} key={lead.id}>
               <div className="leadOpsHeader">
                 <div><span className="badge">{lead.status}</span>{overdue ? <span className="badge danger">FOLLOW-UP OVERDUE</span> : null}{unscheduled ? <span className="badge danger">NEXT ACTION MISSING</span> : null}<h3>{lead.firstName} {lead.lastName}</h3></div>
@@ -227,7 +257,7 @@ export default async function AdminDashboard() {
               <p className="finePrint muted">Consent: {lead.contactConsent && lead.consentAt ? `YES • ${lead.consentAt.toLocaleString("en-US")}` : "NO — DO NOT CONTACT"} • Notice {lead.privacyVersion ?? "not recorded"}</p>
               <div className="checkoutOps">
                 <div><span className="label">Payment</span><strong>{latestPayment?.status ?? "NOT CREATED"}</strong>{latestPayment ? <span>${(latestPayment.amountCents / 100).toFixed(2)} {latestPayment.currency.toUpperCase()} • {latestPayment.cohort ? `${latestPayment.cohort.code} • ` : "legacy unbound • "}{latestPayment.createdAt.toLocaleString("en-US")}</span> : <span>Qualify the applicant before creating checkout.</span>}</div>
-                {activeCheckout ? <a className="button" href={latestPayment.checkoutUrl!} target="_blank" rel="noreferrer">Open secure checkout ↗</a> : <form className="inlineForm" action={createCheckrideCheckoutSession.bind(null, lead.id)}><select name="cohortId" required defaultValue="" disabled={!paymentsConfigured || !checkoutEligible}><option value="" disabled>Reserve cohort seat</option>{checkoutCohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.code} — {cohort.seatsAvailable} seat{cohort.seatsAvailable === 1 ? "" : "s"}</option>)}</select><button type="submit" disabled={!paymentsConfigured || !checkoutEligible}>Create $349 checkout</button></form>}
+                {activeCheckout ? <a className="button" href={latestPayment.checkoutUrl!} target="_blank" rel="noreferrer">Open secure checkout ↗</a> : activeCheckoutExists ? <span className="notice warningBox"><strong>Checkout sharing locked.</strong> Expire the active Session in Stripe before reopening launch readiness.</span> : <form className="inlineForm" action={createCheckrideCheckoutSession.bind(null, lead.id)}><select name="cohortId" required defaultValue="" disabled={!paymentsOperationallyReady || !checkoutEligible}><option value="" disabled>Reserve cohort seat</option>{checkoutCohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.code} — {cohort.seatsAvailable} seat{cohort.seatsAvailable === 1 ? "" : "s"}</option>)}</select><button type="submit" disabled={!paymentsOperationallyReady || !checkoutEligible}>Create $349 checkout</button></form>}
               </div>
               <form className="opsForm leadPipelineForm" action={updateCheckrideLeadStatus.bind(null, lead.id)}>
                 <div className="formGrid">

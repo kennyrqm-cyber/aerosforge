@@ -7,6 +7,7 @@ import {
   getCheckrideCheckoutConfig,
   type CheckrideCheckoutConfig
 } from "@/lib/stripe";
+import { assertCheckrideLaunchGatesApproved, getCheckrideLaunchReadiness } from "@/lib/launch-readiness";
 
 export const CHECKRIDE_FOUNDING_OFFER = {
   code: "PRIVATE_HELICOPTER_FOUNDING_2026",
@@ -121,6 +122,7 @@ export async function createCheckrideCheckout(input: {
   if (!CHECKOUT_ELIGIBLE_LEAD_STATUSES.has(lead.status)) {
     throw new Error("Only qualified Checkride leads can receive checkout.");
   }
+  await assertCheckrideLaunchGatesApproved(db);
 
   const existing = await db.checkridePayment.findFirst({
     where: {
@@ -144,6 +146,7 @@ export async function createCheckrideCheckout(input: {
   const now = new Date();
   const requestedExpiry = new Date(now.getTime() + 23 * 60 * 60 * 1000);
   const payment = await db.$transaction(async (tx) => {
+    await assertCheckrideLaunchGatesApproved(tx);
     const cohort = await tx.checkrideCohort.findUnique({ where: { id: input.cohortId } });
     if (!cohort || cohort.status !== CheckrideCohortStatus.SCHEDULED || cohort.startsAt <= now || !cohort.endsAt) {
       throw new Error("Checkout requires a future scheduled Checkride cohort with a defined delivery window.");
@@ -286,8 +289,11 @@ export async function processStripeWebhook(event: Stripe.Event) {
           nextStatus = CheckridePaymentStatus.REVIEW_REQUIRED;
           action = "CHECKRIDE_PAYMENT_REVIEW_REQUIRED";
         } else if (session.payment_status === "paid" && !PAYMENT_ADVERSE_STATUSES.has(payment.status)) {
-          const existingEnrollment = await tx.checkrideEnrollment.findUnique({ where: { leadId: payment.leadId } });
-          if (!AUTOMATED_SUCCESS_STATUSES.has(payment.status) || (existingEnrollment && existingEnrollment.paymentId !== payment.id)) {
+          const [existingEnrollment, launchReadiness] = await Promise.all([
+            tx.checkrideEnrollment.findUnique({ where: { leadId: payment.leadId } }),
+            getCheckrideLaunchReadiness(tx)
+          ]);
+          if (!launchReadiness.ready || !AUTOMATED_SUCCESS_STATUSES.has(payment.status) || (existingEnrollment && existingEnrollment.paymentId !== payment.id)) {
             nextStatus = CheckridePaymentStatus.REVIEW_REQUIRED;
             action = "CHECKRIDE_PAYMENT_REVIEW_REQUIRED";
           } else {

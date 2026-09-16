@@ -57,6 +57,7 @@ jobs:
       - run: npm run test:content-workflow
       - run: npm run test:checkride-leads
       - run: npm run test:checkride-baseline
+      - run: npm run test:launch-readiness
       - run: npm run test:checkride-payments
       - run: npm run test:checkride-enrollments
       - run: npm run test:privacy-requests

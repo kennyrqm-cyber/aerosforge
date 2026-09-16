@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { AssignmentStatus, CheckrideCohortStatus, CheckrideEnrollmentStatus, ContentStatus, LeadStatus, PrivacyRequestStatus, PrivacyRequestType, ProgressStatus, ReviewDecision, Role } from "@/generated/prisma/client";
+import { AssignmentStatus, CheckrideCohortStatus, CheckrideEnrollmentStatus, ContentStatus, LaunchGateStatus, LeadStatus, PrivacyRequestStatus, PrivacyRequestType, ProgressStatus, ReviewDecision, Role } from "@/generated/prisma/client";
 import {
   publishLessonWorkflow,
   publishScenarioWorkflow,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/checkride-enrollments";
 import { db } from "@/lib/db";
 import { getAppSession, requireRole } from "@/lib/session";
+import { updateLaunchGateDecisionWorkflow } from "@/lib/launch-readiness";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
 import {
   createPrivacyRequest,
@@ -308,6 +309,23 @@ export async function updatePrivacyRequestStatus(requestId: string, formData: Fo
     requestId: safeRequestId,
     status: statusText as PrivacyRequestStatus,
     internalNote: optionalText(formData.get("internalNote"), 2000) ?? null
+  });
+  revalidatePath("/dashboard/admin");
+}
+
+export async function updateLaunchGateDecision(gateKey: string, formData: FormData) {
+  const session = await requireRole(Role.ADMIN);
+  const safeGateKey = requiredText(gateKey, "Launch gate", 120);
+  const statusText = requiredText(formData.get("status"), "Launch gate status", 40).toUpperCase();
+  if (!Object.values(LaunchGateStatus).includes(statusText as LaunchGateStatus)) {
+    throw new Error("Invalid launch-gate status.");
+  }
+  await updateLaunchGateDecisionWorkflow({
+    actor: session.user,
+    gateKey: safeGateKey,
+    status: statusText as LaunchGateStatus,
+    evidence: optionalText(formData.get("evidence"), 2000) ?? null,
+    reviewerName: optionalText(formData.get("reviewerName"), 160) ?? null
   });
   revalidatePath("/dashboard/admin");
 }

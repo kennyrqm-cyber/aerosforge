@@ -18,6 +18,7 @@ Release-candidate foundation for an aviation education and operations platform.
 - Admin-only, amount-locked Stripe Checkout for qualified Checkride leads with signed, idempotent webhook fulfillment
 - Payment-triggered Checkride delivery records with Admin-owned cohorts, capacity controls, account matching, next-action accountability, and refund/dispute lockout
 - Cohort-bound Checkout inventory with expiring seat holds, automatic paid-cohort assignment, and refund/expiration release controls
+- Database-backed founding-cohort launch gates with versioned evidence, accountable reviewers, audit history, and server-enforced checkout lockout
 - Fail-closed privacy-request intake with a monitored-contact dependency, duplicate suppression, response targets, and audit history
 - Admin privacy case queue that blocks processing/completion until identity verification is recorded
 - Email verification and password recovery integration prepared for Resend
@@ -34,6 +35,7 @@ All public capabilities remain closed unless their exact flags and dependencies 
 - `WINCHESTER_LEADS_ENABLED` controls lead submission.
 - `CHECKRIDE_LEADS_ENABLED` controls Checkride Accelerator applications.
 - `CHECKRIDE_PAYMENTS_ENABLED` remains ineffective unless a restricted Stripe key, signed-webhook secret, approved Price ID, and exact checkout origin are all configured.
+- Payment configuration cannot bypass the independently tracked Stage 4 launch gates documented in `docs/FOUNDING_COHORT_LAUNCH_GATES.md`.
 - `PRIVACY_REQUESTS_ENABLED` requires a valid `PRIVACY_CONTACT_EMAIL`; the case workflow remains unavailable without both.
 - `PRIVACY_REQUEST_RESPONSE_DAYS` sets an operational target only and does not determine applicable legal obligations.
 - `PUBLIC_INDEXING_ENABLED` controls search-engine indexing.
@@ -63,6 +65,7 @@ Until those gates are evidenced, this branch is a release candidate—not a publ
 ```bash
 npm ci
 npm run preflight
+npm run test:launch-readiness # CI test identities + PostgreSQL only
 npm run typecheck
 npm run lint
 npm run build
