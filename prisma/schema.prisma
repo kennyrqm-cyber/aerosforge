@@ -364,6 +364,7 @@ model CheckrideLead {
 model CheckridePayment {
   id                      String                 @id @default(cuid())
   leadId                  String
+  cohortId                String?
   createdById             String
   offerCode               String                 @default("PRIVATE_HELICOPTER_FOUNDING_2026")
   offerVersion            Int                    @default(1)
@@ -379,12 +380,14 @@ model CheckridePayment {
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
   lead                    CheckrideLead          @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  cohort                  CheckrideCohort?       @relation(fields: [cohortId], references: [id], onDelete: Restrict)
   createdBy               User                   @relation("CheckridePaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
   webhookEvents           StripeWebhookEvent[]
   enrollment              CheckrideEnrollment?
 
   @@index([leadId, createdAt])
   @@index([status, createdAt])
+  @@index([cohortId, status, expiresAt])
 }
 
 model CheckrideCohort {
@@ -399,6 +402,7 @@ model CheckrideCohort {
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
   owner       User                  @relation("CheckrideCohortOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  payments    CheckridePayment[]
   enrollments CheckrideEnrollment[]
 
   @@index([status, startsAt])

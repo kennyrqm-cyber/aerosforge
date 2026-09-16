@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AssignmentStatus, CheckridePaymentStatus, LeadStatus, PrivacyRequestStatus, Role } from "@/generated/prisma/client";
+import { AssignmentStatus, CheckrideCohortStatus, CheckrideEnrollmentStatus, CheckridePaymentStatus, LeadStatus, PrivacyRequestStatus, Role } from "@/generated/prisma/client";
 import { SignOutButton } from "@/components/sign-out-button";
 import {
   assignStudentToCfi,
@@ -30,7 +30,7 @@ export default async function AdminDashboard() {
   const session = await requireRole(Role.ADMIN);
   const now = new Date();
   const paymentsConfigured = isCheckrideCheckoutConfigured();
-  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, paidCheckridePaymentCount, paidCheckrideRevenue, paymentReviewCount, overdueCheckrideLeadCount, unscheduledCheckrideLeadCount, privacyOpenCount, privacyOverdueCount, privacyIdentityPendingCount, privacyRequestRows, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments] = await Promise.all([
+  const [users, students, cfis, winchesterOpenLeadCount, checkrideOpenLeadCount, checkrideApplicationCount, qualifiedCheckrideLeadCount, enrolledCheckrideLeadCount, paidCheckridePaymentCount, paidCheckrideRevenue, paymentReviewCount, overdueCheckrideLeadCount, checkoutCohortRows, unscheduledCheckrideLeadCount, privacyOpenCount, privacyOverdueCount, privacyIdentityPendingCount, privacyRequestRows, draftCount, drafts, draftScenarios, approved, approvedScenarios, auditEvents, winchesterLeadRows, checkrideLeadRows, cfiUsers, studentUsers, assignments, publishedLessonCount] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: Role.STUDENT } }),
     db.user.count({ where: { role: Role.CFI } }),
@@ -47,6 +47,26 @@ export default async function AdminDashboard() {
         nextFollowUpAt: { lt: now },
         status: { notIn: [LeadStatus.ENROLLED, LeadStatus.CLOSED] }
       }
+    }),
+    db.checkrideCohort.findMany({
+      where: { status: CheckrideCohortStatus.SCHEDULED, startsAt: { gt: now }, endsAt: { not: null } },
+      include: {
+        enrollments: {
+          where: { status: { in: [CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING, CheckrideEnrollmentStatus.READY, CheckrideEnrollmentStatus.ACTIVE, CheckrideEnrollmentStatus.COMPLETED] } },
+          select: { id: true }
+        },
+        payments: {
+          where: {
+            OR: [
+              { status: { in: [CheckridePaymentStatus.CREATING, CheckridePaymentStatus.OPEN] } },
+              { status: { in: [CheckridePaymentStatus.PAID, CheckridePaymentStatus.REVIEW_REQUIRED] }, paidAt: { not: null }, enrollment: null }
+            ]
+          },
+          select: { id: true }
+        }
+      },
+      orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
+      take: 100
     }),
     db.checkrideLead.count({
       where: {
@@ -69,7 +89,7 @@ export default async function AdminDashboard() {
     db.auditEvent.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
     db.winchesterLead.findMany({ orderBy: { createdAt: "desc" }, take: 25 }),
     db.checkrideLead.findMany({
-      include: { payments: { orderBy: { createdAt: "desc" }, take: 1 } },
+      include: { payments: { include: { cohort: { select: { code: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 1 } },
       orderBy: { createdAt: "desc" },
       take: 50
     }),
@@ -82,10 +102,15 @@ export default async function AdminDashboard() {
       },
       orderBy: { updatedAt: "desc" },
       take: 30
-    })
+    }),
+    db.lesson.count({ where: { status: "PUBLISHED" } })
   ]);
   const qualificationRate = checkrideApplicationCount === 0 ? 0 : Math.round((qualifiedCheckrideLeadCount / checkrideApplicationCount) * 100);
   const paidRevenue = ((paidCheckrideRevenue._sum.amountCents ?? 0) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const checkoutCohorts = checkoutCohortRows.flatMap((cohort) => {
+    const seatsAvailable = cohort.capacity - cohort.enrollments.length - cohort.payments.length;
+    return seatsAvailable > 0 && publishedLessonCount > 0 ? [{ ...cohort, seatsAvailable }] : [];
+  });
 
   return <main>
     <div className="dashboardGrid">
@@ -166,8 +191,9 @@ export default async function AdminDashboard() {
 
         <div className="section">
           <div className="kicker">First revenue pipeline</div><h2>Checkride Accelerator applications</h2>
-          <p className="muted">Applications become payable only after qualification. Checkout is Stripe-hosted, created by an Admin, amount-locked to the approved $349 offer, and fulfilled only by a verified webhook.</p>
+          <p className="muted">Applications become payable only after qualification. Every Stripe-hosted Checkout Session is amount-locked to the approved $349 offer and must reserve inventory in a real future cohort before it can be created.</p>
           {!paymentsConfigured ? <div className="notice warningBox"><strong>Payments are not open yet.</strong> The Stripe restricted key, webhook secret, approved Price ID, checkout origin, and explicit payment flag must all be configured.</div> : null}
+          {checkoutCohorts.length === 0 ? <div className="notice warningBox"><strong>No seats are sellable.</strong> Checkout requires independently reviewed published content plus a future scheduled cohort with a defined end and available capacity.</div> : null}
           <div className="metricRow revenueMetrics">
             <div className="metric"><strong>{checkrideApplicationCount}</strong><span className="label">Applications</span></div>
             <div className="metric"><strong>{qualifiedCheckrideLeadCount}</strong><span className="label">Qualified or beyond</span></div>
@@ -184,7 +210,7 @@ export default async function AdminDashboard() {
             const overdue = Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now && !terminal);
             const unscheduled = lead.contactConsent && !lead.nextFollowUpAt && !terminal;
             const latestPayment = lead.payments[0];
-            const checkoutEligible = lead.contactConsent && checkoutEligibleLeadStatuses.has(lead.status) && latestPayment?.status !== CheckridePaymentStatus.REVIEW_REQUIRED;
+            const checkoutEligible = lead.contactConsent && checkoutEligibleLeadStatuses.has(lead.status) && latestPayment?.status !== CheckridePaymentStatus.REVIEW_REQUIRED && checkoutCohorts.length > 0;
             const activeCheckout = latestPayment?.status === CheckridePaymentStatus.OPEN && latestPayment.checkoutUrl && latestPayment.expiresAt && latestPayment.expiresAt > now;
             return <article className={`card leadOpsCard ${overdue ? "overdueLead" : ""}`} key={lead.id}>
               <div className="leadOpsHeader">
@@ -200,8 +226,8 @@ export default async function AdminDashboard() {
               {lead.biggestChallenge ? <p className="leadChallenge"><strong>Preparation challenge:</strong> {lead.biggestChallenge}</p> : null}
               <p className="finePrint muted">Consent: {lead.contactConsent && lead.consentAt ? `YES • ${lead.consentAt.toLocaleString("en-US")}` : "NO — DO NOT CONTACT"} • Notice {lead.privacyVersion ?? "not recorded"}</p>
               <div className="checkoutOps">
-                <div><span className="label">Payment</span><strong>{latestPayment?.status ?? "NOT CREATED"}</strong>{latestPayment ? <span>${(latestPayment.amountCents / 100).toFixed(2)} {latestPayment.currency.toUpperCase()} • {latestPayment.createdAt.toLocaleString("en-US")}</span> : <span>Qualify the applicant before creating checkout.</span>}</div>
-                {activeCheckout ? <a className="button" href={latestPayment.checkoutUrl!} target="_blank" rel="noreferrer">Open secure checkout ↗</a> : <form action={createCheckrideCheckoutSession.bind(null, lead.id)}><button type="submit" disabled={!paymentsConfigured || !checkoutEligible}>Create $349 checkout</button></form>}
+                <div><span className="label">Payment</span><strong>{latestPayment?.status ?? "NOT CREATED"}</strong>{latestPayment ? <span>${(latestPayment.amountCents / 100).toFixed(2)} {latestPayment.currency.toUpperCase()} • {latestPayment.cohort ? `${latestPayment.cohort.code} • ` : "legacy unbound • "}{latestPayment.createdAt.toLocaleString("en-US")}</span> : <span>Qualify the applicant before creating checkout.</span>}</div>
+                {activeCheckout ? <a className="button" href={latestPayment.checkoutUrl!} target="_blank" rel="noreferrer">Open secure checkout ↗</a> : <form className="inlineForm" action={createCheckrideCheckoutSession.bind(null, lead.id)}><select name="cohortId" required defaultValue="" disabled={!paymentsConfigured || !checkoutEligible}><option value="" disabled>Reserve cohort seat</option>{checkoutCohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.code} — {cohort.seatsAvailable} seat{cohort.seatsAvailable === 1 ? "" : "s"}</option>)}</select><button type="submit" disabled={!paymentsConfigured || !checkoutEligible}>Create $349 checkout</button></form>}
               </div>
               <form className="opsForm leadPipelineForm" action={updateCheckrideLeadStatus.bind(null, lead.id)}>
                 <div className="formGrid">

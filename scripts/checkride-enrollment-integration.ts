@@ -27,7 +27,7 @@ async function expectRejection(action: () => Promise<unknown>, expected: string)
   throw new Error(`Expected rejection: ${expected}`);
 }
 
-async function createPaidEnrollment(input: { adminId: string; email: string }) {
+async function createPaidEnrollment(input: { adminId: string; email: string; cohortId?: string }) {
   const lead = await db.checkrideLead.create({
     data: {
       firstName: "Cohort",
@@ -43,12 +43,13 @@ async function createPaidEnrollment(input: { adminId: string; email: string }) {
     }
   });
   const payment = await db.checkridePayment.create({
-    data: { leadId: lead.id, createdById: input.adminId, status: CheckridePaymentStatus.PAID, paidAt: new Date() }
+    data: { leadId: lead.id, cohortId: input.cohortId, createdById: input.adminId, status: CheckridePaymentStatus.PAID, paidAt: new Date() }
   });
   return db.checkrideEnrollment.create({
     data: {
       leadId: lead.id,
       paymentId: payment.id,
+      cohortId: input.cohortId,
       status: CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING,
       nextActionAt: new Date(Date.now() + 86_400_000)
     }
@@ -73,17 +74,73 @@ async function main() {
     "Only an Admin can create Checkride cohorts."
   );
   const cohort = await createCheckrideCohortWorkflow({ actor: { id: admin.id, role: Role.ADMIN }, ...cohortInput });
+  const heldCohort = await createCheckrideCohortWorkflow({
+    actor: { id: admin.id, role: Role.ADMIN },
+    code: `HELD-${Date.now()}`,
+    name: "Held inventory test cohort",
+    startsAt: new Date(Date.now() + 30 * 86_400_000),
+    endsAt: new Date(Date.now() + 60 * 86_400_000),
+    capacity: 1
+  });
+  const reservationLead = await db.checkrideLead.create({
+    data: {
+      firstName: "Held",
+      lastName: "Reservation",
+      email: `held-${Date.now()}@aerosforge.test`,
+      certificateLevel: "Student pilot",
+      ratingGoal: "Private Helicopter",
+      contactConsent: true,
+      consentAt: new Date(),
+      privacyVersion: "integration-test",
+      status: LeadStatus.QUALIFIED,
+      qualifiedAt: new Date()
+    }
+  });
+  const heldPayment = await db.checkridePayment.create({
+    data: {
+      leadId: reservationLead.id,
+      cohortId: heldCohort.id,
+      createdById: admin.id,
+      status: CheckridePaymentStatus.OPEN,
+      expiresAt: new Date(Date.now() + 86_400_000)
+    }
+  });
+  const heldConflictEnrollment = await createPaidEnrollment({ adminId: admin.id, email: student.email });
+  await expectRejection(
+    () => updateCheckrideEnrollmentWorkflow({
+      actor: { id: admin.id, role: Role.ADMIN },
+      enrollmentId: heldConflictEnrollment.id,
+      status: CheckrideEnrollmentStatus.READY,
+      userId: student.id,
+      cohortId: heldCohort.id,
+      nextActionAt: new Date(Date.now() + 2 * 86_400_000)
+    }),
+    "Checkride cohort capacity has been reached."
+  );
+  await expectRejection(
+    () => updateCheckrideCohortStatusWorkflow({ actor: { id: admin.id, role: Role.ADMIN }, cohortId: heldCohort.id, status: CheckrideCohortStatus.CANCELED }),
+    "Resolve every open enrollment and payment reservation before closing a cohort."
+  );
+  await db.checkridePayment.update({ where: { id: heldPayment.id }, data: { status: CheckridePaymentStatus.EXPIRED } });
+  await updateCheckrideCohortStatusWorkflow({ actor: { id: admin.id, role: Role.ADMIN }, cohortId: heldCohort.id, status: CheckrideCohortStatus.CANCELED });
   const wrongStudent = await db.user.create({
     data: { name: "Wrong Student", email: `wrong-${Date.now()}@aerosforge.test`, role: Role.STUDENT, emailVerified: true }
   });
   const unverifiedStudent = await db.user.create({
     data: { name: "Unverified Student", email: `unverified-${Date.now()}@aerosforge.test`, role: Role.STUDENT, emailVerified: false }
   });
-  const first = await createPaidEnrollment({ adminId: admin.id, email: student.email });
+  const first = await createPaidEnrollment({ adminId: admin.id, email: student.email, cohortId: cohort.id });
   const second = await createPaidEnrollment({ adminId: admin.id, email: student.email });
   const unverifiedEnrollment = await createPaidEnrollment({ adminId: admin.id, email: unverifiedStudent.email });
   const nextActionAt = new Date(Date.now() + 2 * 86_400_000);
 
+  await expectRejection(
+    () => updateCheckrideEnrollmentWorkflow({
+      actor: { id: admin.id, role: Role.ADMIN }, enrollmentId: first.id,
+      status: CheckrideEnrollmentStatus.READY, userId: student.id, cohortId: null, nextActionAt
+    }),
+    "Enrollment must remain in its reserved Checkride cohort."
+  );
   await expectRejection(
     () => updateCheckrideEnrollmentWorkflow({
       actor: { id: cfi.id, role: Role.CFI }, enrollmentId: first.id,
@@ -120,7 +177,7 @@ async function main() {
   }
   await expectRejection(
     () => updateCheckrideCohortStatusWorkflow({ actor: { id: admin.id, role: Role.ADMIN }, cohortId: cohort.id, status: CheckrideCohortStatus.CANCELED }),
-    "Resolve every open enrollment before closing a cohort."
+    "Resolve every open enrollment and payment reservation before closing a cohort."
   );
   await expectRejection(
     () => updateCheckrideEnrollmentWorkflow({

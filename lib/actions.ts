@@ -431,18 +431,19 @@ export async function updateCheckrideLeadStatus(leadId: string, formData: FormDa
   revalidatePath("/dashboard/admin");
 }
 
-export async function createCheckrideCheckoutSession(leadId: string) {
+export async function createCheckrideCheckoutSession(leadId: string, formData: FormData) {
   const session = await requireRole(Role.ADMIN);
   const safeLeadId = requiredText(leadId, "Lead", 128);
-  await createCheckrideCheckout({ actor: session.user, leadId: safeLeadId });
+  const cohortId = requiredText(formData.get("cohortId"), "Checkride cohort", 128);
+  await createCheckrideCheckout({ actor: session.user, leadId: safeLeadId, cohortId });
   revalidatePath("/dashboard/admin");
+  revalidatePath("/dashboard/admin/checkride");
 }
 
 export async function createCheckrideCohort(formData: FormData) {
   const session = await requireRole(Role.ADMIN);
   const startsAt = new Date(requiredText(formData.get("startsAt"), "Cohort start", 40));
-  const endsAtText = optionalText(formData.get("endsAt"), 40);
-  const endsAt = endsAtText ? new Date(endsAtText) : null;
+  const endsAt = new Date(requiredText(formData.get("endsAt"), "Cohort end", 40));
   const capacity = Number(requiredText(formData.get("capacity"), "Capacity", 3));
   await createCheckrideCohortWorkflow({
     actor: session.user,

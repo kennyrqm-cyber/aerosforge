@@ -39,6 +39,16 @@ async function main() {
       privacyVersion: "integration-test"
     }
   });
+  const cohort = await db.checkrideCohort.create({
+    data: {
+      code: `PAY-${Date.now()}`,
+      name: "Payment inventory test cohort",
+      startsAt: new Date(Date.now() + 7 * 86_400_000),
+      endsAt: new Date(Date.now() + 21 * 86_400_000),
+      capacity: 1,
+      ownerId: admin.id
+    }
+  });
   const config = {
     apiKey: "rk_test_not_used_by_fake_gateway",
     webhookSecret: "whsec_not_used_by_fake_gateway",
@@ -49,10 +59,11 @@ async function main() {
     async retrievePrice() {
       return { active: true, currency: "usd", unitAmount: 34_900, recurring: false };
     },
-    async createSession(input: { paymentId: string; integrationIdentifier: string; expiresAt: Date }) {
+    async createSession(input: { paymentId: string; cohortId: string; integrationIdentifier: string; expiresAt: Date }) {
       if (!/^aerosforge_checkride_[a-z]{8}$/.test(input.integrationIdentifier)) {
         throw new Error("Integration identifier is missing its random suffix.");
       }
+      if (input.cohortId !== cohort.id) throw new Error("Checkout was not bound to the selected cohort.");
       return {
         id: `cs_test_${input.paymentId}`,
         url: `https://checkout.stripe.com/c/pay/${input.paymentId}`,
@@ -62,11 +73,11 @@ async function main() {
   };
 
   await expectRejection(
-    () => createCheckrideCheckout({ actor: { id: student.id, role: Role.STUDENT }, leadId: lead.id, config, gateway }),
+    () => createCheckrideCheckout({ actor: { id: student.id, role: Role.STUDENT }, leadId: lead.id, cohortId: cohort.id, config, gateway }),
     "Only an Admin can create Checkride checkout sessions."
   );
   await expectRejection(
-    () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, config, gateway }),
+    () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway }),
     "Only qualified Checkride leads can receive checkout."
   );
   await db.checkrideLead.update({ where: { id: lead.id }, data: { status: LeadStatus.QUALIFIED, qualifiedAt: new Date() } });
@@ -74,17 +85,48 @@ async function main() {
     () => createCheckrideCheckout({
       actor: { id: admin.id, role: Role.ADMIN },
       leadId: lead.id,
+      cohortId: cohort.id,
       config,
       gateway: { ...gateway, retrievePrice: async () => ({ active: true, currency: "usd", unitAmount: 39900, recurring: false }) }
     }),
     "Stripe price does not match the approved $349 one-time founding offer."
   );
+  const publishedLesson = await db.lesson.findFirstOrThrow({ where: { status: "PUBLISHED" } });
+  await db.lesson.update({ where: { id: publishedLesson.id }, data: { status: "DRAFT" } });
+  await expectRejection(
+    () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway }),
+    "Checkout requires independently reviewed published training content."
+  );
+  await db.lesson.update({ where: { id: publishedLesson.id }, data: { status: "PUBLISHED" } });
 
-  const first = await createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, config, gateway });
-  const duplicate = await createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, config, gateway });
+  await expectRejection(
+    () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: "missing-cohort", config, gateway }),
+    "Checkout requires a future scheduled Checkride cohort with a defined delivery window."
+  );
+
+  const first = await createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway });
+  const duplicate = await createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway });
   if (!first.created || duplicate.created || first.payment.id !== duplicate.payment.id || !first.payment.checkoutUrl) {
     throw new Error("Open Checkout Session duplicate suppression failed.");
   }
+  const capacityLead = await db.checkrideLead.create({
+    data: {
+      firstName: "Capacity",
+      lastName: "Test",
+      email: `capacity-${Date.now()}@aerosforge.test`,
+      certificateLevel: "Student pilot",
+      ratingGoal: "Private Helicopter",
+      contactConsent: true,
+      consentAt: new Date(),
+      privacyVersion: "integration-test",
+      status: LeadStatus.QUALIFIED,
+      qualifiedAt: new Date()
+    }
+  });
+  await expectRejection(
+    () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: capacityLead.id, cohortId: cohort.id, config, gateway }),
+    "No reservable seats remain in this Checkride cohort."
+  );
 
   const event = {
     id: `evt_test_${first.payment.id}`,
@@ -93,7 +135,7 @@ async function main() {
       object: {
         id: first.payment.stripeCheckoutSessionId,
         client_reference_id: first.payment.id,
-        metadata: { paymentId: first.payment.id, leadId: lead.id },
+        metadata: { paymentId: first.payment.id, leadId: lead.id, cohortId: cohort.id },
         amount_total: CHECKRIDE_FOUNDING_OFFER.amountCents,
         currency: CHECKRIDE_FOUNDING_OFFER.currency,
         payment_status: "paid",
@@ -114,8 +156,9 @@ async function main() {
   if (
     !processed.processed || repeated.processed ||
     storedPayment.status !== "PAID" || !storedPayment.paidAt ||
+    storedPayment.cohortId !== cohort.id ||
     storedLead.status !== LeadStatus.ENROLLED || !storedLead.enrolledAt ||
-    storedEnrollment.status !== CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING || !storedEnrollment.nextActionAt ||
+    storedEnrollment.status !== CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING || storedEnrollment.cohortId !== cohort.id || !storedEnrollment.nextActionAt ||
     eventCount !== 1 || auditCount !== 1
   ) {
     throw new Error("Signed-event fulfillment, enrollment, or webhook idempotency failed.");
@@ -136,6 +179,98 @@ async function main() {
   if (refundedPayment.status !== CheckridePaymentStatus.REFUNDED || refundedEnrollment.status !== CheckrideEnrollmentStatus.REFUNDED || refundEventCount !== 1) {
     throw new Error("Refund did not stop delivery idempotently.");
   }
+
+  const releasedSeat = await createCheckrideCheckout({
+    actor: { id: admin.id, role: Role.ADMIN }, leadId: capacityLead.id, cohortId: cohort.id, config, gateway
+  });
+  if (!releasedSeat.created) throw new Error("Refunded payment did not release its cohort seat.");
+  const expirationEvent = {
+    id: `evt_expired_${releasedSeat.payment.id}`,
+    type: "checkout.session.expired",
+    data: { object: { id: releasedSeat.payment.stripeCheckoutSessionId } }
+  } as unknown as Stripe.Event;
+  await processStripeWebhook(expirationEvent);
+  await processStripeWebhook(expirationEvent);
+  const expiredPayment = await db.checkridePayment.findUniqueOrThrow({ where: { id: releasedSeat.payment.id } });
+  if (expiredPayment.status !== CheckridePaymentStatus.EXPIRED) throw new Error("Expired checkout did not release its cohort seat.");
+  const lateSuccessEvent = {
+    id: `evt_late_success_${releasedSeat.payment.id}`,
+    type: "checkout.session.async_payment_succeeded",
+    data: {
+      object: {
+        id: releasedSeat.payment.stripeCheckoutSessionId,
+        client_reference_id: releasedSeat.payment.id,
+        metadata: { paymentId: releasedSeat.payment.id, leadId: capacityLead.id, cohortId: cohort.id },
+        amount_total: CHECKRIDE_FOUNDING_OFFER.amountCents,
+        currency: CHECKRIDE_FOUNDING_OFFER.currency,
+        payment_status: "paid",
+        payment_intent: `pi_late_${releasedSeat.payment.id}`,
+        customer: `cus_late_${releasedSeat.payment.id}`
+      }
+    }
+  } as unknown as Stripe.Event;
+  await processStripeWebhook(lateSuccessEvent);
+  const latePayment = await db.checkridePayment.findUniqueOrThrow({ where: { id: releasedSeat.payment.id } });
+  const lateEnrollment = await db.checkrideEnrollment.findUnique({ where: { paymentId: releasedSeat.payment.id } });
+  if (latePayment.status !== CheckridePaymentStatus.REVIEW_REQUIRED || !latePayment.paidAt || lateEnrollment) {
+    throw new Error("Late paid event was not held for review without automatic enrollment.");
+  }
+  const replacementLead = await db.checkrideLead.create({
+    data: {
+      firstName: "Replacement",
+      lastName: "Test",
+      email: `replacement-${Date.now()}@aerosforge.test`,
+      certificateLevel: "Student pilot",
+      ratingGoal: "Private Helicopter",
+      contactConsent: true,
+      consentAt: new Date(),
+      privacyVersion: "integration-test",
+      status: LeadStatus.QUALIFIED,
+      qualifiedAt: new Date()
+    }
+  });
+  await expectRejection(
+    () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: replacementLead.id, cohortId: cohort.id, config, gateway }),
+    "No reservable seats remain in this Checkride cohort."
+  );
+  const lateRefundEvent = {
+    id: `evt_late_refund_${releasedSeat.payment.id}`,
+    type: "charge.refunded",
+    data: { object: { payment_intent: latePayment.stripePaymentIntentId, amount: 34_900, amount_refunded: 34_900 } }
+  } as unknown as Stripe.Event;
+  await processStripeWebhook(lateRefundEvent);
+  const replacementSeat = await createCheckrideCheckout({
+    actor: { id: admin.id, role: Role.ADMIN }, leadId: replacementLead.id, cohortId: cohort.id, config, gateway
+  });
+  if (!replacementSeat.created || replacementSeat.payment.cohortId !== cohort.id) {
+    throw new Error("Expired checkout inventory was not safely reusable.");
+  }
+  const failedEvent = {
+    id: `evt_failed_${replacementSeat.payment.id}`,
+    type: "checkout.session.async_payment_failed",
+    data: { object: { id: replacementSeat.payment.stripeCheckoutSessionId } }
+  } as unknown as Stripe.Event;
+  await processStripeWebhook(failedEvent);
+  const failedPayment = await db.checkridePayment.findUniqueOrThrow({ where: { id: replacementSeat.payment.id } });
+  if (failedPayment.status !== CheckridePaymentStatus.FAILED) throw new Error("Failed payment did not release its cohort seat.");
+  const finalLead = await db.checkrideLead.create({
+    data: {
+      firstName: "Final",
+      lastName: "Inventory",
+      email: `final-inventory-${Date.now()}@aerosforge.test`,
+      certificateLevel: "Student pilot",
+      ratingGoal: "Private Helicopter",
+      contactConsent: true,
+      consentAt: new Date(),
+      privacyVersion: "integration-test",
+      status: LeadStatus.QUALIFIED,
+      qualifiedAt: new Date()
+    }
+  });
+  const finalSeat = await createCheckrideCheckout({
+    actor: { id: admin.id, role: Role.ADMIN }, leadId: finalLead.id, cohortId: cohort.id, config, gateway
+  });
+  if (!finalSeat.created) throw new Error("Failed payment inventory was not safely reusable.");
 
   const disputedLead = await db.checkrideLead.create({
     data: {
@@ -178,7 +313,7 @@ async function main() {
   if (paymentUnderDispute.status !== CheckridePaymentStatus.DISPUTED || enrollmentUnderDispute.status !== CheckrideEnrollmentStatus.DISPUTED || disputeEventCount !== 1) {
     throw new Error("Dispute did not stop delivery idempotently.");
   }
-  console.log("Qualified checkout → amount lock → signed payment → enrollment → refund/dispute lockout → idempotency passed.");
+  console.log("Qualified checkout → reserved cohort seat → signed payment → automatic cohort enrollment → refund/dispute lockout → idempotency passed.");
 }
 
 main().then(() => db.$disconnect()).catch(async (error) => {

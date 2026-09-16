@@ -17,6 +17,7 @@ Release-candidate foundation for an aviation education and operations platform.
 - Student-only FAA-S-ACS-15 confidence baseline with a self-reported focus map visible to the assigned CFI
 - Admin-only, amount-locked Stripe Checkout for qualified Checkride leads with signed, idempotent webhook fulfillment
 - Payment-triggered Checkride delivery records with Admin-owned cohorts, capacity controls, account matching, next-action accountability, and refund/dispute lockout
+- Cohort-bound Checkout inventory with expiring seat holds, automatic paid-cohort assignment, and refund/expiration release controls
 - Fail-closed privacy-request intake with a monitored-contact dependency, duplicate suppression, response targets, and audit history
 - Admin privacy case queue that blocks processing/completion until identity verification is recorded
 - Email verification and password recovery integration prepared for Resend

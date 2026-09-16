@@ -89,7 +89,7 @@ export async function createCheckrideCohortWorkflow(input: {
   code: string;
   name: string;
   startsAt: Date;
-  endsAt?: Date | null;
+  endsAt: Date;
   capacity: number;
 }) {
   if (input.actor.role !== Role.ADMIN) throw new Error("Only an Admin can create Checkride cohorts.");
@@ -98,8 +98,8 @@ export async function createCheckrideCohortWorkflow(input: {
   if (!/^[A-Z0-9][A-Z0-9-]{2,31}$/.test(code)) throw new Error("Cohort code must be 3–32 letters, numbers, or hyphens.");
   if (!name || name.length > 120) throw new Error("Cohort name must be 1–120 characters.");
   if (Number.isNaN(input.startsAt.getTime())) throw new Error("Cohort start is invalid.");
-  if (input.endsAt && Number.isNaN(input.endsAt.getTime())) throw new Error("Cohort end is invalid.");
-  if (input.endsAt && input.endsAt < input.startsAt) throw new Error("Cohort end must be after its start.");
+  if (Number.isNaN(input.endsAt.getTime())) throw new Error("Cohort end is invalid.");
+  if (input.endsAt <= input.startsAt) throw new Error("Cohort end must be after its start.");
   if (!Number.isInteger(input.capacity) || input.capacity < 1 || input.capacity > 50) {
     throw new Error("Cohort capacity must be between 1 and 50.");
   }
@@ -110,7 +110,7 @@ export async function createCheckrideCohortWorkflow(input: {
         code,
         name,
         startsAt: input.startsAt,
-        endsAt: input.endsAt ?? null,
+        endsAt: input.endsAt,
         capacity: input.capacity,
         ownerId: input.actor.id
       }
@@ -139,17 +139,30 @@ export async function updateCheckrideCohortStatusWorkflow(input: {
     if (!cohort) throw new Error("Checkride cohort not found.");
     if (!COHORT_TRANSITIONS[cohort.status].has(input.status)) throw new Error("Invalid Checkride cohort status transition.");
     if (input.status === CheckrideCohortStatus.COMPLETED || input.status === CheckrideCohortStatus.CANCELED) {
-      const unfinished = await tx.checkrideEnrollment.count({
-        where: {
-          cohortId: cohort.id,
-          status: { in: [
-            CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING,
-            CheckrideEnrollmentStatus.READY,
-            CheckrideEnrollmentStatus.ACTIVE
-          ] }
-        }
-      });
-      if (unfinished > 0) throw new Error("Resolve every open enrollment before closing a cohort.");
+      const [unfinished, heldPayments] = await Promise.all([
+        tx.checkrideEnrollment.count({
+          where: {
+            cohortId: cohort.id,
+            status: { in: [
+              CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING,
+              CheckrideEnrollmentStatus.READY,
+              CheckrideEnrollmentStatus.ACTIVE
+            ] }
+          }
+        }),
+        tx.checkridePayment.count({
+          where: {
+            cohortId: cohort.id,
+            OR: [
+              { status: { in: [CheckridePaymentStatus.CREATING, CheckridePaymentStatus.OPEN] } },
+              { status: { in: [CheckridePaymentStatus.PAID, CheckridePaymentStatus.REVIEW_REQUIRED] }, paidAt: { not: null }, enrollment: null }
+            ]
+          }
+        })
+      ]);
+      if (unfinished > 0 || heldPayments > 0) {
+        throw new Error("Resolve every open enrollment and payment reservation before closing a cohort.");
+      }
     }
     const updated = await tx.checkrideCohort.update({ where: { id: cohort.id }, data: { status: input.status } });
     await tx.auditEvent.create({
@@ -200,6 +213,9 @@ export async function updateCheckrideEnrollmentWorkflow(input: {
 
     const userId = input.userId ?? null;
     const cohortId = input.cohortId ?? null;
+    if (enrollment.payment.cohortId && cohortId !== enrollment.payment.cohortId) {
+      throw new Error("Enrollment must remain in its reserved Checkride cohort.");
+    }
     if (userId) {
       const user = await tx.user.findUnique({ where: { id: userId }, select: { role: true, email: true, emailVerified: true } });
       if (!user || user.role !== Role.STUDENT || !user.emailVerified) {
@@ -214,10 +230,22 @@ export async function updateCheckrideEnrollmentWorkflow(input: {
       if (!cohort || cohort.status === CheckrideCohortStatus.CANCELED || cohort.status === CheckrideCohortStatus.COMPLETED) {
         throw new Error("Select an available Checkride cohort.");
       }
-      const occupied = await tx.checkrideEnrollment.count({
-        where: { cohortId, id: { not: enrollment.id }, status: { in: CAPACITY_STATUSES } }
-      });
-      if (occupied >= cohort.capacity) throw new Error("Checkride cohort capacity has been reached.");
+      const [occupied, heldPayments] = await Promise.all([
+        tx.checkrideEnrollment.count({
+          where: { cohortId, id: { not: enrollment.id }, status: { in: CAPACITY_STATUSES } }
+        }),
+        tx.checkridePayment.count({
+          where: {
+            cohortId,
+            id: { not: enrollment.paymentId },
+            OR: [
+              { status: { in: [CheckridePaymentStatus.CREATING, CheckridePaymentStatus.OPEN] } },
+              { status: { in: [CheckridePaymentStatus.PAID, CheckridePaymentStatus.REVIEW_REQUIRED] }, paidAt: { not: null }, enrollment: null }
+            ]
+          }
+        })
+      ]);
+      if (occupied + heldPayments >= cohort.capacity) throw new Error("Checkride cohort capacity has been reached.");
     }
     if ((input.status === CheckrideEnrollmentStatus.ACTIVE || input.status === CheckrideEnrollmentStatus.COMPLETED) && (!userId || !cohortId)) {
       throw new Error("Active or completed delivery requires a matching Student account and cohort.");

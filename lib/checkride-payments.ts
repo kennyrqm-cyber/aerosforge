@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type Stripe from "stripe";
-import { CheckrideEnrollmentStatus, CheckridePaymentStatus, LeadStatus, Role } from "@/generated/prisma/client";
+import { CheckrideCohortStatus, CheckrideEnrollmentStatus, CheckridePaymentStatus, LeadStatus, Role } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import {
   createStripeClient,
@@ -22,6 +22,7 @@ const CHECKOUT_ELIGIBLE_LEAD_STATUSES = new Set<LeadStatus>([
 ]);
 const PAYMENT_FINAL_OR_ESCALATED_STATUSES = new Set<CheckridePaymentStatus>([
   CheckridePaymentStatus.PAID,
+  CheckridePaymentStatus.REVIEW_REQUIRED,
   CheckridePaymentStatus.REFUNDED,
   CheckridePaymentStatus.DISPUTED
 ]);
@@ -29,12 +30,25 @@ const PAYMENT_ADVERSE_STATUSES = new Set<CheckridePaymentStatus>([
   CheckridePaymentStatus.REFUNDED,
   CheckridePaymentStatus.DISPUTED
 ]);
+const RESERVED_ENROLLMENT_STATUSES = [
+  CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING,
+  CheckrideEnrollmentStatus.READY,
+  CheckrideEnrollmentStatus.ACTIVE,
+  CheckrideEnrollmentStatus.COMPLETED
+];
+const HELD_PAYMENT_STATUSES = [CheckridePaymentStatus.CREATING, CheckridePaymentStatus.OPEN];
+const AUTOMATED_SUCCESS_STATUSES = new Set<CheckridePaymentStatus>([
+  CheckridePaymentStatus.CREATING,
+  CheckridePaymentStatus.OPEN,
+  CheckridePaymentStatus.PAID
+]);
 
 type CheckoutGateway = {
   retrievePrice(priceId: string): Promise<{ active: boolean; currency: string; unitAmount: number | null; recurring: boolean }>;
   createSession(input: {
     paymentId: string;
     leadId: string;
+    cohortId: string;
     email: string;
     priceId: string;
     baseUrl: string;
@@ -77,6 +91,7 @@ function productionGateway(config: CheckrideCheckoutConfig): CheckoutGateway {
         metadata: {
           paymentId: input.paymentId,
           leadId: input.leadId,
+          cohortId: input.cohortId,
           offerCode: CHECKRIDE_FOUNDING_OFFER.code,
           offerVersion: String(CHECKRIDE_FOUNDING_OFFER.version)
         }
@@ -93,6 +108,7 @@ function productionGateway(config: CheckrideCheckoutConfig): CheckoutGateway {
 export async function createCheckrideCheckout(input: {
   actor: { id: string; role: Role };
   leadId: string;
+  cohortId: string;
   config?: CheckrideCheckoutConfig;
   gateway?: CheckoutGateway;
 }) {
@@ -115,29 +131,78 @@ export async function createCheckrideCheckout(input: {
     },
     orderBy: { createdAt: "desc" }
   });
-  if (existing?.checkoutUrl) return { payment: existing, created: false };
+  if (existing?.checkoutUrl) {
+    if (existing.cohortId !== input.cohortId) throw new Error("An active checkout already reserves a different cohort.");
+    return { payment: existing, created: false };
+  }
 
   const price = await gateway.retrievePrice(config.priceId);
   if (!price.active || price.recurring || price.currency !== CHECKRIDE_FOUNDING_OFFER.currency || price.unitAmount !== CHECKRIDE_FOUNDING_OFFER.amountCents) {
     throw new Error("Stripe price does not match the approved $349 one-time founding offer.");
   }
 
-  const payment = await db.checkridePayment.create({
-    data: {
-      leadId: lead.id,
-      createdById: input.actor.id,
-      offerCode: CHECKRIDE_FOUNDING_OFFER.code,
-      offerVersion: CHECKRIDE_FOUNDING_OFFER.version,
-      amountCents: CHECKRIDE_FOUNDING_OFFER.amountCents,
-      currency: CHECKRIDE_FOUNDING_OFFER.currency
+  const now = new Date();
+  const requestedExpiry = new Date(now.getTime() + 23 * 60 * 60 * 1000);
+  const payment = await db.$transaction(async (tx) => {
+    const cohort = await tx.checkrideCohort.findUnique({ where: { id: input.cohortId } });
+    if (!cohort || cohort.status !== CheckrideCohortStatus.SCHEDULED || cohort.startsAt <= now || !cohort.endsAt) {
+      throw new Error("Checkout requires a future scheduled Checkride cohort with a defined delivery window.");
     }
-  });
+    const [publishedLessonCount, enrolledSeats, heldSeats, orphanedPaidSeats] = await Promise.all([
+      tx.lesson.count({ where: { status: "PUBLISHED" } }),
+      tx.checkrideEnrollment.count({
+        where: { cohortId: cohort.id, status: { in: RESERVED_ENROLLMENT_STATUSES } }
+      }),
+      tx.checkridePayment.count({
+        where: {
+          cohortId: cohort.id,
+          status: { in: HELD_PAYMENT_STATUSES }
+        }
+      }),
+      tx.checkridePayment.count({
+        where: {
+          cohortId: cohort.id,
+          status: { in: [CheckridePaymentStatus.PAID, CheckridePaymentStatus.REVIEW_REQUIRED] },
+          paidAt: { not: null },
+          enrollment: null
+        }
+      })
+    ]);
+    if (publishedLessonCount === 0) {
+      throw new Error("Checkout requires independently reviewed published training content.");
+    }
+    if (enrolledSeats + heldSeats + orphanedPaidSeats >= cohort.capacity) {
+      throw new Error("No reservable seats remain in this Checkride cohort.");
+    }
+    const created = await tx.checkridePayment.create({
+      data: {
+        leadId: lead.id,
+        cohortId: cohort.id,
+        createdById: input.actor.id,
+        offerCode: CHECKRIDE_FOUNDING_OFFER.code,
+        offerVersion: CHECKRIDE_FOUNDING_OFFER.version,
+        amountCents: CHECKRIDE_FOUNDING_OFFER.amountCents,
+        currency: CHECKRIDE_FOUNDING_OFFER.currency,
+        expiresAt: requestedExpiry
+      }
+    });
+    await tx.auditEvent.create({
+      data: {
+        actorId: input.actor.id,
+        action: "CHECKRIDE_SEAT_RESERVED",
+        entityType: "CheckridePayment",
+        entityId: created.id,
+        metadata: { leadId: lead.id, cohortId: cohort.id, expiresAt: requestedExpiry.toISOString() }
+      }
+    });
+    return created;
+  }, { isolationLevel: "Serializable" });
 
   try {
-    const requestedExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
     const session = await gateway.createSession({
       paymentId: payment.id,
       leadId: lead.id,
+      cohortId: input.cohortId,
       email: lead.email,
       priceId: config.priceId,
       baseUrl: config.baseUrl,
@@ -163,7 +228,7 @@ export async function createCheckrideCheckout(input: {
           action: "CHECKRIDE_CHECKOUT_CREATED",
           entityType: "CheckridePayment",
           entityId: payment.id,
-          metadata: { leadId: lead.id, offerCode: payment.offerCode, amountCents: payment.amountCents, currency: payment.currency }
+          metadata: { leadId: lead.id, cohortId: payment.cohortId, offerCode: payment.offerCode, amountCents: payment.amountCents, currency: payment.currency }
         }
       });
       return result;
@@ -171,7 +236,7 @@ export async function createCheckrideCheckout(input: {
     return { payment: updated, created: true };
   } catch {
     await db.$transaction([
-      db.checkridePayment.update({ where: { id: payment.id }, data: { status: CheckridePaymentStatus.REVIEW_REQUIRED } }),
+      db.checkridePayment.update({ where: { id: payment.id }, data: { status: CheckridePaymentStatus.REVIEW_REQUIRED, expiresAt: null } }),
       db.auditEvent.create({
         data: {
           actorId: input.actor.id,
@@ -207,8 +272,14 @@ export async function processStripeWebhook(event: Stripe.Event) {
       const paymentId = session.metadata?.paymentId ?? session.client_reference_id;
       if (paymentId) payment = await tx.checkridePayment.findUnique({ where: { id: paymentId } });
       if (payment) {
+        if (session.payment_status === "paid") {
+          stripePaymentIntentId = stringId(session.payment_intent) ?? undefined;
+          stripeCustomerId = stringId(session.customer) ?? undefined;
+          paidAt = payment.paidAt ?? new Date();
+        }
         const matches = session.id === payment.stripeCheckoutSessionId
           && session.metadata?.leadId === payment.leadId
+          && (!payment.cohortId || session.metadata?.cohortId === payment.cohortId)
           && session.amount_total === payment.amountCents
           && session.currency === payment.currency;
         if (!matches) {
@@ -216,24 +287,21 @@ export async function processStripeWebhook(event: Stripe.Event) {
           action = "CHECKRIDE_PAYMENT_REVIEW_REQUIRED";
         } else if (session.payment_status === "paid" && !PAYMENT_ADVERSE_STATUSES.has(payment.status)) {
           const existingEnrollment = await tx.checkrideEnrollment.findUnique({ where: { leadId: payment.leadId } });
-          if (existingEnrollment && existingEnrollment.paymentId !== payment.id) {
+          if (!AUTOMATED_SUCCESS_STATUSES.has(payment.status) || (existingEnrollment && existingEnrollment.paymentId !== payment.id)) {
             nextStatus = CheckridePaymentStatus.REVIEW_REQUIRED;
             action = "CHECKRIDE_PAYMENT_REVIEW_REQUIRED";
           } else {
             nextStatus = CheckridePaymentStatus.PAID;
             action = "CHECKRIDE_PAYMENT_CONFIRMED";
-            stripePaymentIntentId = stringId(session.payment_intent) ?? undefined;
-            stripeCustomerId = stringId(session.customer) ?? undefined;
-            paidAt = new Date();
           }
         }
       }
-    } else if (event.type === "checkout.session.expired") {
+    } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
       const session = event.data.object as Stripe.Checkout.Session;
       payment = await tx.checkridePayment.findUnique({ where: { stripeCheckoutSessionId: session.id } });
       if (payment && !PAYMENT_FINAL_OR_ESCALATED_STATUSES.has(payment.status)) {
-        nextStatus = CheckridePaymentStatus.EXPIRED;
-        action = "CHECKRIDE_CHECKOUT_EXPIRED";
+        nextStatus = event.type === "checkout.session.expired" ? CheckridePaymentStatus.EXPIRED : CheckridePaymentStatus.FAILED;
+        action = event.type === "checkout.session.expired" ? "CHECKRIDE_CHECKOUT_EXPIRED" : "CHECKRIDE_PAYMENT_FAILED";
       }
     } else if (event.type === "charge.refunded") {
       const charge = event.data.object as Stripe.Charge;
@@ -272,6 +340,7 @@ export async function processStripeWebhook(event: Stripe.Event) {
           create: {
             leadId: payment.leadId,
             paymentId: payment.id,
+            cohortId: payment.cohortId,
             status: CheckrideEnrollmentStatus.PAID_PENDING_ONBOARDING,
             nextActionAt: new Date((paidAt ?? new Date()).getTime() + 48 * 60 * 60 * 1000)
           }
