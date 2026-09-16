@@ -1,0 +1,84 @@
+name: AEROSFORGE ONE CI
+on:
+  push:
+    branches: [main, "aerosforge-one-*", "feature/**"]
+  pull_request:
+permissions:
+  contents: read
+env:
+  DATABASE_URL: postgresql://ci_user:ci_password@127.0.0.1:5432/aerosforge_ci
+  DIRECT_DATABASE_URL: postgresql://ci_user:ci_password@127.0.0.1:5432/aerosforge_ci
+  BETTER_AUTH_SECRET: ci-only-secret-32-characters-minimum-000000000000
+  BETTER_AUTH_ALLOWED_HOSTS: 127.0.0.1:3000,localhost:3000
+  E2E_TEST_IDENTITIES_ENABLED: "true"
+  E2E_TEST_PASSWORD: ci-only-role-flow-password-000000
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci_user
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: aerosforge_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_user -d aerosforge_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require lockfile before merge
+        if: github.event_name == 'pull_request' || github.ref_name == 'main'
+        shell: bash
+        run: |
+          test -f package-lock.json || { echo "package-lock.json must be committed before merge/production."; exit 1; }
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::warning::Bootstrapping without lockfile on a feature branch only. Commit package-lock.json before opening/merging a PR."
+            npm install --no-audit --no-fund
+          fi
+      - run: npm run security:static
+      - run: npm run schema:static
+      - run: npm run prisma:generate
+      - run: npm run db:deploy
+      - run: npm run db:seed
+      - run: npm run test:content-workflow
+      - run: npm run test:checkride-leads
+      - run: npm run test:checkride-baseline
+      - run: npm run test:checkride-payments
+      - run: npm run test:checkride-enrollments
+      - run: npm run test:privacy-requests
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - name: Start production server
+        shell: bash
+        run: |
+          npm start > /tmp/aerosforge-next.log 2>&1 &
+          echo $! > /tmp/aerosforge-next.pid
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/aerosforge-next.log
+          exit 1
+      - name: Production smoke test
+        env:
+          APP_URL: http://127.0.0.1:3000
+          EXPECT_EMAIL_DELIVERY_DISABLED: "true"
+          EXPECT_CHECKRIDE_LEADS_DISABLED: "true"
+          EXPECT_CHECKRIDE_PAYMENTS_DISABLED: "true"
+          EXPECT_PRIVACY_REQUESTS_DISABLED: "true"
+        run: npm run smoke:postdeploy
