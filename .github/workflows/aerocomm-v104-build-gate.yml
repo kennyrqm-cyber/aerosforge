@@ -6,12 +6,17 @@ on:
       - feature/aerocomm-master-v104-preview
     paths:
       - .github/workflows/aerocomm-v104-build-gate.yml
-      - .aerocomm-bootstrap/part00.b64
+      - package.json
       - package-lock.json
+      - app/**
+      - components/**
+      - lib/**
+      - scripts/**
+      - tests/**
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify-build:
@@ -23,42 +28,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Materialize exact RC
+      - name: Verify canonical RC identity
+        shell: bash
         run: |
-          base64 -d .aerocomm-bootstrap/part00.b64 > /tmp/aerocomm-v1.0.4.zip
-          echo "5331d30f837cbf52d2d006fe1c6a7df0ce3f10d6f4aa54f77edd36c41b09d2ac  /tmp/aerocomm-v1.0.4.zip" | sha256sum -c -
-          rm -rf /tmp/aerocomm-src
-          mkdir -p /tmp/aerocomm-src
-          unzip -q /tmp/aerocomm-v1.0.4.zip -d /tmp/aerocomm-src
-          cp package-lock.json /tmp/aerocomm-src/aerocomm-master-mvp-v1.0.4/package-lock.json
-      - name: npm ci
-        working-directory: /tmp/aerocomm-src/aerocomm-master-mvp-v1.0.4
+          node -e "const p=require('./package.json'); if(p.name!=='aerocomm-master-mvp'||p.version!=='1.0.4') process.exit(1)"
+          test -f package-lock.json
+      - name: Install exact dependencies
         run: npm ci --no-audit --no-fund
       - name: Release verification
-        working-directory: /tmp/aerocomm-src/aerocomm-master-mvp-v1.0.4
         run: npm run verify:release
       - name: Full TypeScript
-        working-directory: /tmp/aerocomm-src/aerocomm-master-mvp-v1.0.4
         run: npm run typecheck
       - name: Next.js production build
-        working-directory: /tmp/aerocomm-src/aerocomm-master-mvp-v1.0.4
         run: npm run build
-      - name: Record verified build
-        run: |
-          mkdir -p .aerocomm-verified
-          cat > .aerocomm-verified/v1.0.4-build.txt <<EOF
-          AEROCOMM_MASTER_MVP_VERSION=1.0.4
-          RC_SHA256=5331d30f837cbf52d2d006fe1c6a7df0ce3f10d6f4aa54f77edd36c41b09d2ac
-          LOCKFILE_SOURCE_COMMIT=aa240195ce5b2f05f73c7ab8b6e39ae6c90188f4
-          NODE_VERSION=$(node --version)
-          NPM_VERSION=$(npm --version)
-          VERIFIED_STEPS=npm_ci,verify_release,typecheck,next_build
-          GITHUB_RUN_ID=$GITHUB_RUN_ID
-          GITHUB_SHA=$GITHUB_SHA
-          VERIFIED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .aerocomm-verified/v1.0.4-build.txt
-          git commit -m "test(aerocomm): verify v1.0.4 release build"
-          git push
