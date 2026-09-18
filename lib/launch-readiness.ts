@@ -127,6 +127,7 @@ export async function updateLaunchGateDecisionWorkflow(input: {
   status: LaunchGateStatus;
   evidence?: string | null;
   reviewerName?: string | null;
+  expectedUpdatedAt: Date | null;
 }) {
   if (input.actor.role !== Role.ADMIN) throw new Error("Only an Admin can update launch-readiness gates.");
   if (!isGateKey(input.gateKey)) throw new Error("Unknown launch-readiness gate.");
@@ -144,6 +145,10 @@ export async function updateLaunchGateDecisionWorkflow(input: {
 
   return db.$transaction(async (tx) => {
     const previous = await tx.launchGateDecision.findUnique({ where: { gateKey: input.gateKey } });
+    if ((previous?.updatedAt.getTime() ?? null) !== (input.expectedUpdatedAt?.getTime() ?? null)) {
+      throw new Error("Launch-gate evidence changed after this form loaded. Refresh and review the latest decision.");
+    }
+    const approvedAt = input.status === LaunchGateStatus.APPROVED ? new Date() : null;
     const decision = await tx.launchGateDecision.upsert({
       where: { gateKey: input.gateKey },
       update: {
@@ -151,7 +156,7 @@ export async function updateLaunchGateDecisionWorkflow(input: {
         status: input.status,
         evidence,
         reviewerName,
-        approvedAt: input.status === LaunchGateStatus.APPROVED ? new Date() : null,
+        approvedAt,
         updatedById: input.actor.id
       },
       create: {
@@ -160,7 +165,7 @@ export async function updateLaunchGateDecisionWorkflow(input: {
         status: input.status,
         evidence,
         reviewerName,
-        approvedAt: input.status === LaunchGateStatus.APPROVED ? new Date() : null,
+        approvedAt,
         updatedById: input.actor.id
       }
     });
@@ -172,11 +177,17 @@ export async function updateLaunchGateDecisionWorkflow(input: {
         entityId: decision.id,
         metadata: {
           gateKey: input.gateKey,
+          previousGateVersion: previous?.gateVersion ?? null,
           gateVersion: definition.version,
           previousStatus: previous?.status ?? null,
           status: input.status,
+          previousEvidence: previous?.evidence ?? null,
+          evidence,
           evidenceLength: evidence?.length ?? 0,
-          reviewerName
+          previousReviewerName: previous?.reviewerName ?? null,
+          reviewerName,
+          previousApprovedAt: previous?.approvedAt?.toISOString() ?? null,
+          approvedAt: approvedAt?.toISOString() ?? null
         }
       }
     });

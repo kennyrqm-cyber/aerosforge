@@ -9,6 +9,8 @@ Revenue Stage 4 turns the remaining production blockers into server-enforced, ve
 - `APPROVED` requires evidence plus an accountable reviewer name or role.
 - Gate definitions are versioned in code. Evidence recorded against a different version fails closed.
 - Every change is attributed to the authenticated Admin and recorded in `AuditEvent`.
+- Every update carries the revision timestamp loaded by the Admin. A stale form is rejected instead of silently overwriting newer evidence.
+- Audit history retains the before-and-after status, evidence reference, reviewer, gate version, and approval time for each change.
 - Checkout checks all gates before contacting Stripe and checks again inside the serializable seat-reservation transaction.
 - A paid webhook rechecks readiness before automatic enrollment. If a gate was revoked after Checkout creation, financial evidence is retained in manual review and delivery does not begin automatically.
 - The Admin dashboard stops exposing an active Checkout link while readiness is revoked and instructs operations to expire that Session in Stripe before reopening launch readiness.

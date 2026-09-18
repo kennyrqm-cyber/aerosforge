@@ -320,12 +320,18 @@ export async function updateLaunchGateDecision(gateKey: string, formData: FormDa
   if (!Object.values(LaunchGateStatus).includes(statusText as LaunchGateStatus)) {
     throw new Error("Invalid launch-gate status.");
   }
+  const expectedUpdatedAtText = optionalText(formData.get("expectedUpdatedAt"), 64);
+  const expectedUpdatedAt = expectedUpdatedAtText ? new Date(expectedUpdatedAtText) : null;
+  if (expectedUpdatedAt && Number.isNaN(expectedUpdatedAt.getTime())) {
+    throw new Error("Invalid launch-gate revision. Refresh and try again.");
+  }
   await updateLaunchGateDecisionWorkflow({
     actor: session.user,
     gateKey: safeGateKey,
     status: statusText as LaunchGateStatus,
     evidence: optionalText(formData.get("evidence"), 2000) ?? null,
-    reviewerName: optionalText(formData.get("reviewerName"), 160) ?? null
+    reviewerName: optionalText(formData.get("reviewerName"), 160) ?? null,
+    expectedUpdatedAt
   });
   revalidatePath("/dashboard/admin");
 }

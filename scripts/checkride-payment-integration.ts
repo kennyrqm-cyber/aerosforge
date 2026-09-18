@@ -23,6 +23,11 @@ async function expectRejection(action: () => Promise<unknown>, expected: string)
   throw new Error(`Expected rejection: ${expected}`);
 }
 
+async function currentGateRevision(gateKey: string) {
+  const decision = await db.launchGateDecision.findUnique({ where: { gateKey }, select: { updatedAt: true } });
+  return decision?.updatedAt ?? null;
+}
+
 async function main() {
   const [admin, student] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { email: "admin.e2e@aerosforge.test" } }),
@@ -84,7 +89,8 @@ async function main() {
   await db.checkrideLead.update({ where: { id: lead.id }, data: { status: LeadStatus.QUALIFIED, qualifiedAt: new Date() } });
   await updateLaunchGateDecisionWorkflow({
     actor: { id: admin.id, role: Role.ADMIN }, gateKey: CHECKRIDE_LAUNCH_GATES[0].key,
-    status: LaunchGateStatus.BLOCKED
+    status: LaunchGateStatus.BLOCKED,
+    expectedUpdatedAt: await currentGateRevision(CHECKRIDE_LAUNCH_GATES[0].key)
   });
   await expectRejection(
     () => createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway }),
@@ -95,7 +101,8 @@ async function main() {
       actor: { id: admin.id, role: Role.ADMIN }, gateKey: gate.key,
       status: LaunchGateStatus.APPROVED,
       evidence: `Payment integration evidence for ${gate.key}; current definition verified.`,
-      reviewerName: `CI ${gate.authority}`
+      reviewerName: `CI ${gate.authority}`,
+      expectedUpdatedAt: await currentGateRevision(gate.key)
     });
   }
   await expectRejection(
@@ -126,7 +133,8 @@ async function main() {
   });
   await updateLaunchGateDecisionWorkflow({
     actor: { id: admin.id, role: Role.ADMIN }, gateKey: CHECKRIDE_LAUNCH_GATES[0].key,
-    status: LaunchGateStatus.BLOCKED
+    status: LaunchGateStatus.BLOCKED,
+    expectedUpdatedAt: await currentGateRevision(CHECKRIDE_LAUNCH_GATES[0].key)
   });
   const gatedPaidEvent = {
     id: `evt_gate_hold_${gatedCheckout.payment.id}`,
@@ -161,7 +169,8 @@ async function main() {
     actor: { id: admin.id, role: Role.ADMIN }, gateKey: CHECKRIDE_LAUNCH_GATES[0].key,
     status: LaunchGateStatus.APPROVED,
     evidence: "Payment integration reapproval after the deliberate webhook lockout drill.",
-    reviewerName: "CI Independent CFI"
+    reviewerName: "CI Independent CFI",
+    expectedUpdatedAt: await currentGateRevision(CHECKRIDE_LAUNCH_GATES[0].key)
   });
 
   const first = await createCheckrideCheckout({ actor: { id: admin.id, role: Role.ADMIN }, leadId: lead.id, cohortId: cohort.id, config, gateway });

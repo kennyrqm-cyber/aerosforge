@@ -161,6 +161,7 @@ export default async function AdminDashboard() {
             <p>{gate.requirement}</p>
             <p className="finePrint muted"><strong>Accountable authority:</strong> {gate.authority}{gate.stale ? " • PRIOR APPROVAL IS STALE" : ""}</p>
             <form className="opsForm" action={updateLaunchGateDecision.bind(null, gate.key)}>
+              <input type="hidden" name="expectedUpdatedAt" value={gate.updatedAt?.toISOString() ?? ""}/>
               <label>Status<select name="status" defaultValue={gate.status}>{launchGateStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
               <label>Reviewer or accountable role<input name="reviewerName" maxLength={160} defaultValue={gate.reviewerName ?? ""} placeholder="Name and role required for approval"/></label>
               <label>Evidence reference<textarea name="evidence" rows={4} maxLength={2000} defaultValue={gate.evidence ?? ""} placeholder="Document/version, dated drill result, ticket, report, or controlled evidence location"/></label>
