@@ -133,8 +133,17 @@ try {
   } else {
     const body = await health.json().catch(() => null);
     if (!body?.ok || body?.database !== "reachable") failures.push(`/api/health payload is not healthy`);
+    if (!body?.release || body.release.commit === "unknown" || body.release.branch === "unknown") {
+      failures.push(`/api/health is missing deployed release identity`);
+    }
+    if (!body?.timestamp || Number.isNaN(Date.parse(body.timestamp))) {
+      failures.push(`/api/health is missing a valid timestamp`);
+    }
     const cache = health.headers.get("cache-control") || "";
     if (!cache.includes("no-store")) failures.push(`/api/health must be no-store`);
+    if (health.headers.get("x-robots-tag") !== "noindex") {
+      failures.push(`/api/health must remain noindex`);
+    }
   }
 
   expectRedirectToSignIn(await request("/dashboard"), "/dashboard");
