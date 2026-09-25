@@ -1,0 +1,562 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  CFI
+  ADMIN
+}
+
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  RETIRED
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  DISCOVERY_SCHEDULED
+  ENROLLED
+  CLOSED
+}
+
+enum ReviewDecision {
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum PrivacyRequestType {
+  ACCESS
+  CORRECTION
+  DELETION
+  PORTABILITY
+  CONSENT_WITHDRAWAL
+  APPEAL
+}
+
+enum PrivacyRequestStatus {
+  RECEIVED
+  IDENTITY_PENDING
+  VERIFIED
+  IN_PROGRESS
+  COMPLETED
+  DENIED
+}
+
+enum CheckridePaymentStatus {
+  CREATING
+  OPEN
+  PAID
+  EXPIRED
+  FAILED
+  REVIEW_REQUIRED
+  REFUNDED
+  DISPUTED
+}
+
+enum CheckrideCohortStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELED
+}
+
+enum CheckrideEnrollmentStatus {
+  PAID_PENDING_ONBOARDING
+  READY
+  ACTIVE
+  COMPLETED
+  REVIEW_REQUIRED
+  REFUNDED
+  DISPUTED
+}
+
+enum LaunchGateStatus {
+  BLOCKED
+  EVIDENCE_SUBMITTED
+  APPROVED
+}
+
+model User {
+  id                   String                 @id @default(cuid())
+  name                 String
+  email                String                 @unique
+  emailVerified        Boolean                @default(false)
+  image                String?
+  role                 Role                   @default(STUDENT)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  sessions             Session[]
+  accounts             Account[]
+  profile              PilotProfile?
+  lessonProgress       LessonProgress[]
+  badges               UserBadge[]
+  gauntletAttempts     GauntletAttempt[]
+  studentAssignments   CfiStudentAssignment[] @relation("StudentAssignments")
+  cfiAssignments       CfiStudentAssignment[] @relation("CfiAssignments")
+  auditEvents          AuditEvent[]           @relation("AuditActor")
+  contentReviews       ContentReview[]        @relation("ReviewAuthor")
+  gauntletReviews      GauntletReview[]       @relation("GauntletReviewAuthor")
+  leads                WinchesterLead[]
+  checkrideLeads       CheckrideLead[]
+  privacyRequests      PrivacyRequest[]
+  checkrideBaselines   CheckrideBaseline[]
+  createdPayments      CheckridePayment[]     @relation("CheckridePaymentCreator")
+  ownedCohorts         CheckrideCohort[]      @relation("CheckrideCohortOwner")
+  checkrideEnrollments CheckrideEnrollment[]
+  launchGateUpdates    LaunchGateDecision[]   @relation("LaunchGateUpdater")
+
+  @@index([role])
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
+model PilotProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  callsign           String?
+  homeAirport        String?
+  certificationLevel String?
+  rotorcraftHours    Int?
+  goals              String?
+  onboardingComplete Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Lesson {
+  id          String           @id @default(cuid())
+  slug        String           @unique
+  order       Int              @unique
+  title       String
+  summary     String
+  category    String
+  contentMd   String?
+  status      ContentStatus    @default(DRAFT)
+  version     Int              @default(1)
+  sourceNotes String?
+  reviewedAt  DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  progress    LessonProgress[]
+  reviews     ContentReview[]
+
+  @@index([status, order])
+}
+
+model LessonProgress {
+  id          String         @id @default(cuid())
+  userId      String
+  lessonId    String
+  status      ProgressStatus @default(NOT_STARTED)
+  percent     Int            @default(0)
+  xpAwarded   Int            @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  updatedAt   DateTime       @updatedAt
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson      Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId, status])
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  key         String      @unique
+  name        String
+  description String
+  icon        String?
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id       String   @id @default(cuid())
+  userId   String
+  badgeId  String
+  earnedAt DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge    Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+model GauntletScenario {
+  id               String            @id @default(cuid())
+  slug             String            @unique
+  title            String
+  prompt           String
+  choices          Json
+  correctChoiceKey String
+  explanation      String
+  riskCategory     String
+  difficulty       Int               @default(1)
+  xpValue          Int               @default(100)
+  status           ContentStatus     @default(DRAFT)
+  version          Int               @default(1)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  attempts         GauntletAttempt[]
+  reviews          GauntletReview[]
+}
+
+model GauntletAttempt {
+  id                String           @id @default(cuid())
+  userId            String
+  scenarioId        String
+  selectedChoiceKey String
+  correct           Boolean
+  score             Int
+  xpAwarded         Int              @default(0)
+  createdAt         DateTime         @default(now())
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenario          GauntletScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model CfiStudentAssignment {
+  id        String           @id @default(cuid())
+  cfiId     String
+  studentId String
+  status    AssignmentStatus @default(PENDING)
+  note      String?
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  cfi       User             @relation("CfiAssignments", fields: [cfiId], references: [id], onDelete: Cascade)
+  student   User             @relation("StudentAssignments", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([cfiId, studentId])
+  @@index([studentId, status])
+}
+
+model WinchesterLead {
+  id              String     @id @default(cuid())
+  userId          String?
+  firstName       String
+  lastName        String
+  email           String
+  phone           String?
+  experienceLevel String?
+  targetStart     String?
+  message         String?
+  contactConsent  Boolean    @default(false)
+  consentAt       DateTime?
+  privacyVersion  String?
+  status          LeadStatus @default(NEW)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  user            User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([status, createdAt])
+}
+
+model CheckrideLead {
+  id               String               @id @default(cuid())
+  userId           String?
+  firstName        String
+  lastName         String
+  email            String
+  phone            String?
+  certificateLevel String
+  ratingGoal       String
+  aircraft         String?
+  targetCheckride  String?
+  biggestChallenge String?
+  preferredFormat  String?
+  source           String?
+  campaign         String?
+  contactConsent   Boolean              @default(false)
+  consentAt        DateTime?
+  privacyVersion   String?
+  status           LeadStatus           @default(NEW)
+  internalNote     String?
+  nextFollowUpAt   DateTime?
+  lastContactedAt  DateTime?
+  qualifiedAt      DateTime?
+  enrolledAt       DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  user             User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payments         CheckridePayment[]
+  enrollment       CheckrideEnrollment?
+
+  @@index([email])
+  @@index([status, createdAt])
+  @@index([nextFollowUpAt, status])
+  @@index([ratingGoal, createdAt])
+}
+
+model CheckridePayment {
+  id                      String                 @id @default(cuid())
+  leadId                  String
+  cohortId                String?
+  createdById             String
+  offerCode               String                 @default("PRIVATE_HELICOPTER_FOUNDING_2026")
+  offerVersion            Int                    @default(1)
+  amountCents             Int                    @default(34900)
+  currency                String                 @default("usd")
+  status                  CheckridePaymentStatus @default(CREATING)
+  stripeCheckoutSessionId String?                @unique
+  stripePaymentIntentId   String?                @unique
+  stripeCustomerId        String?
+  checkoutUrl             String?
+  expiresAt               DateTime?
+  paidAt                  DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  lead                    CheckrideLead          @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  cohort                  CheckrideCohort?       @relation(fields: [cohortId], references: [id], onDelete: Restrict)
+  createdBy               User                   @relation("CheckridePaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  webhookEvents           StripeWebhookEvent[]
+  enrollment              CheckrideEnrollment?
+
+  @@index([leadId, createdAt])
+  @@index([status, createdAt])
+  @@index([cohortId, status, expiresAt])
+}
+
+model CheckrideCohort {
+  id          String                @id @default(cuid())
+  code        String                @unique
+  name        String
+  startsAt    DateTime
+  endsAt      DateTime?
+  capacity    Int                   @default(10)
+  status      CheckrideCohortStatus @default(SCHEDULED)
+  ownerId     String
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  owner       User                  @relation("CheckrideCohortOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  payments    CheckridePayment[]
+  enrollments CheckrideEnrollment[]
+
+  @@index([status, startsAt])
+}
+
+model CheckrideEnrollment {
+  id           String                    @id @default(cuid())
+  leadId       String                    @unique
+  paymentId    String                    @unique
+  userId       String?
+  cohortId     String?
+  status       CheckrideEnrollmentStatus @default(PAID_PENDING_ONBOARDING)
+  nextActionAt DateTime?
+  internalNote String?
+  onboardedAt  DateTime?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  lead         CheckrideLead             @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  payment      CheckridePayment          @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  user         User?                     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cohort       CheckrideCohort?          @relation(fields: [cohortId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextActionAt])
+  @@index([cohortId, status])
+  @@index([userId, createdAt])
+}
+
+model StripeWebhookEvent {
+  id          String            @id
+  type        String
+  paymentId   String?
+  processedAt DateTime          @default(now())
+  createdAt   DateTime          @default(now())
+  payment     CheckridePayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId, processedAt])
+  @@index([type, processedAt])
+}
+
+model PrivacyRequest {
+  id                 String               @id @default(cuid())
+  userId             String?
+  requestType        PrivacyRequestType
+  firstName          String
+  lastName           String
+  email              String
+  details            String?
+  status             PrivacyRequestStatus @default(RECEIVED)
+  identityVerifiedAt DateTime?
+  dueAt              DateTime
+  resolvedAt         DateTime?
+  internalNote       String?
+  privacyVersion     String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  user               User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email, createdAt])
+  @@index([status, dueAt])
+}
+
+model CheckrideBaseline {
+  id                String   @id @default(cuid())
+  userId            String
+  certificateTrack  String   @default("PRIVATE_HELICOPTER")
+  standardCode      String
+  standardEdition   String
+  instrumentVersion Int      @default(1)
+  ratings           Json
+  confidenceTotal   Int
+  focusAreas        Json
+  reflection        String?
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model LaunchGateDecision {
+  id           String           @id @default(cuid())
+  gateKey      String           @unique
+  gateVersion  Int              @default(1)
+  status       LaunchGateStatus @default(BLOCKED)
+  evidence     String?
+  reviewerName String?
+  approvedAt   DateTime?
+  updatedById  String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  updatedBy    User             @relation("LaunchGateUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([status, updatedAt])
+}
+
+model FAAResource {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  description String
+  url         String
+  source      String    @default("FAA")
+  verifiedAt  DateTime?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ContentReview {
+  id         String         @id @default(cuid())
+  lessonId   String
+  reviewerId String
+  version    Int
+  decision   ReviewDecision
+  notes      String?
+  createdAt  DateTime       @default(now())
+  lesson     Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  reviewer   User           @relation("ReviewAuthor", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([lessonId, createdAt])
+}
+
+model GauntletReview {
+  id         String           @id @default(cuid())
+  scenarioId String
+  reviewerId String
+  version    Int
+  decision   ReviewDecision
+  notes      String?
+  createdAt  DateTime         @default(now())
+  scenario   GauntletScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  reviewer   User             @relation("GauntletReviewAuthor", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([scenarioId, createdAt])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
